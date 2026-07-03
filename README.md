@@ -8,6 +8,8 @@
 
 This project was inspired by the Nansen passport, eIDAS (the European Union's digital identity system), and Singpass (Singapore's National Digital Identity system).
 
+https://github.com/theodorayy/free-identity
+
 ## agentic trust framework
 
 > **What**: A formal framework for establishing who an agent is, whose authority it carries, what it's permitted to do, and how that permission chain can be verified at every node in a delegation graph.
