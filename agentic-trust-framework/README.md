@@ -1,4 +1,4 @@
-# Agent Trust Framework (ATF)
+# Agentic Trust Framework (ATF)
 
 ATF is a formal framework for identity and access in agentic AI systems, informed by NIST SP 800-63 (identity, authentication, federation) and NIST SP 800-207 (zero trust authorisation), re-derived for contexts where AI agents act as principals alongside, and delegated from, human users.
 
@@ -50,5 +50,4 @@ How is an agent credential issued in one system accepted by another, across orga
 ## Repo Structure
 
 - `docs/` — research and framework documentation (primary artefact)
-- `src/` — reference implementation packages (pnpm workspaces, added when needed)
 - `README.md` — project overview
