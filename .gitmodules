@@ -1,0 +1,3 @@
+[submodule "free-identity"]
+	path = free-identity
+	url = https://github.com/theodorayy/free-identity
