@@ -29,6 +29,8 @@ The human is anchored through an identity provider (IdP), such as Free Identity,
 
 ### agentic systems definitions
 
+![Generic Agentic Systems Architecture](./etc/Generic%20Agentic%20Systems%20Archi.png)
+
 | Define                  | What                                                                                                                                                                                                                                                                                                   | Remarks                                     |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
 | **Root agent**          | An AI agent that:<br>• maintains durable context<br>• owns a goal<br>• directs the execution of subtasks towards that goal<br><br>**Capabilities:** plan, re-plan, escalate, delegate, decline<br><br>**Contains:** durable context, instructions, model, tools                                        |                                             |
