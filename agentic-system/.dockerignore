@@ -1,0 +1,11 @@
+node_modules
+.next
+.eve
+.output
+.hac
+.env*
+.vercel
+.git
+test-results
+playwright-report
+*.tsbuildinfo

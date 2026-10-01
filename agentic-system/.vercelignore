@@ -1,0 +1,10 @@
+.env*
+.hac
+.eve
+.output
+.next
+node_modules
+tests
+test-results
+playwright-report
+*.tsbuildinfo

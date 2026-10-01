@@ -1,0 +1,38 @@
+app = 'hac-agentic-runtime'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  NODE_ENV = 'production'
+  APP_URL = 'https://hac-agentic-system.vercel.app'
+  HAC_DATA_DIR = '/data/hac'
+  HAC_SESSION_MODE = 'sealed'
+  HAC_DEMO = 'false'
+  OIDC_ISSUER = 'https://api.free-id.org'
+  OIDC_CLIENT_ID = 'hac-agentic-system-web'
+  BROWSER_TARGET_URL = 'https://clearance-review-demo.vercel.app'
+
+[[mounts]]
+  source = 'hac_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 3003
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = '60s'
+    interval = '30s'
+    method = 'GET'
+    timeout = '5s'
+    path = '/api/health'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory = '2gb'

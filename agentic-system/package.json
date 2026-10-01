@@ -1,0 +1,54 @@
+{
+  "name": "agentic-system",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3003",
+    "build": "eve build && next build",
+    "start": "node scripts/start.mjs",
+    "lint": "eslint",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "build:web": "next build",
+    "setup:local": "node scripts/setup.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "dev:freeid": "node scripts/freeid.mjs",
+    "test:runtime": "tsx tests/eve-runtime.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@remixicon/react": "^4.9.0",
+    "ai": "7.0.93",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.2.6",
+    "eve": "0.53.1",
+    "jose": "^6.2.12",
+    "next": "16.2.6",
+    "next-themes": "^0.4.6",
+    "playwright": "1.63.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "shadcn": "^4.21.0",
+    "tw-animate-css": "^1.4.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.13",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
