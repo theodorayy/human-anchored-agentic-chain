@@ -12,7 +12,7 @@ primary_region = 'iad'
   HAC_DEMO = 'false'
   OIDC_ISSUER = 'https://api.free-id.org'
   OIDC_CLIENT_ID = 'hac-agentic-system-web'
-  BROWSER_TARGET_URL = 'https://clearance-review-demo.vercel.app'
+  BROWSER_TARGET_URL = 'https://nyc-fibre.vercel.app'
 
 [[mounts]]
   source = 'hac_data'

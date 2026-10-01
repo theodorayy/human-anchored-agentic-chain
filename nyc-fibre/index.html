@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Fibre — Get connected</title>
+<meta name="description" content="Prototype ISP signup used to demonstrate passport-backed identity verification with FreeID.">
+<style>
+  :root {
+    --concrete: #eef1f3;
+    --paper: #ffffff;
+    --ink: #17232e;
+    --muted: #5b6874;
+    --line: #d5dbe0;
+    --single-mode: #f2c200;   /* yellow jacket: the light */
+    --multimode: #00a3ad;     /* aqua jacket: secondary */
+    --ok: #1f7a4d;
+    --warn: #8a5a00;
+    --radius-s: 6px;
+    --radius-l: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--concrete); color: var(--ink); line-height: 1.5; }
+  a { color: inherit; }
+
+  header.site {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px; background: var(--ink); color: #fff;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 1.15rem; letter-spacing: -0.01em; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--single-mode); position: relative; }
+  .brand-mark::after { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: var(--multimode); }
+  .prototype-note { font-size: 0.85rem; color: #c9d3db; }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 40px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 24px 18px 60px; } header.site { padding: 16px 18px; } }
+
+  h1 { font-size: clamp(2rem, 4.2vw, 3.1rem); line-height: 1.05; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 12px; max-width: 18ch; }
+  .lede { color: var(--muted); font-size: 1.1rem; margin: 0 0 32px; max-width: 54ch; }
+
+  /* The fibre: a light line down the steps that fills as you progress */
+  .steps { position: relative; padding-left: 44px; }
+  .fibre { position: absolute; left: 13px; top: 6px; bottom: 6px; width: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .fibre-light { width: 100%; height: 0%; background: var(--single-mode); box-shadow: 0 0 12px var(--single-mode); transition: height 700ms ease; }
+  @media (prefers-reduced-motion: reduce) { .fibre-light { transition: none; } }
+
+  .step { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 24px 26px; margin-bottom: 18px; }
+  .step-dot { position: absolute; left: -41px; top: 24px; width: 26px; height: 26px; border-radius: 50%; background: var(--paper); border: 3px solid var(--line); display: grid; place-items: center; font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+  .step.done .step-dot { border-color: var(--single-mode); background: var(--single-mode); color: var(--ink); }
+  .step.active .step-dot { border-color: var(--single-mode); color: var(--ink); }
+  .step h2 { margin: 0 0 4px; font-size: 1.3rem; letter-spacing: -0.01em; }
+  .step .hint { margin: 0 0 18px; color: var(--muted); }
+  .step.locked { opacity: 0.55; }
+  .step.locked .body, .step.done .body { display: none; }
+  .summary-line { margin: 0; color: var(--muted); }
+  .step.done .summary-line { color: var(--ink); }
+
+  label { display: block; font-weight: 600; margin: 14px 0 6px; }
+  input, select { width: 100%; font: inherit; font-size: 1.05rem; padding: 13px 14px; border: 1.5px solid #b9c3cb; border-radius: var(--radius-s); background: #fff; color: var(--ink); }
+  input:focus-visible, select:focus-visible, button:focus-visible, .choice:focus-visible { outline: 3px solid var(--multimode); outline-offset: 2px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+
+  button { font: inherit; font-weight: 700; font-size: 1.05rem; border: 0; border-radius: var(--radius-s); padding: 14px 22px; cursor: pointer; }
+  .primary { background: var(--single-mode); color: var(--ink); }
+  .primary:hover { filter: brightness(0.96); }
+  .secondary { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .error { color: #a3261b; font-weight: 600; margin: 10px 0 0; }
+
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 700px) { .plans { grid-template-columns: 1fr; } }
+  .choice { text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius-s); padding: 16px; font-weight: 400; width: 100%; }
+  .choice[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+  .plan-speed { display: block; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+  .plan-price { display: block; color: var(--muted); }
+
+  /* Identity options: deliberately unequal hierarchy */
+  .id-options { display: grid; gap: 12px; }
+  .id-option { text-align: left; width: 100%; padding: 18px; border-radius: var(--radius-s); background: #fff; border: 1.5px solid var(--line); font-weight: 400; }
+  .id-option strong { display: block; font-size: 1.1rem; }
+  .id-option span { color: var(--muted); }
+  .id-option.freeid { border: 2px solid var(--ink); }
+  .freeid-badge { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; }
+  .freeid-badge::before { content: ""; width: 14px; height: 14px; border-radius: 3px; background: linear-gradient(135deg, var(--multimode), var(--single-mode)); }
+
+  .qr-panel { display: grid; grid-template-columns: 200px 1fr; gap: 22px; align-items: center; margin-top: 8px; }
+  @media (max-width: 560px) { .qr-panel { grid-template-columns: 1fr; } }
+  .qr { width: 200px; height: 200px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius-s); padding: 10px; }
+  .waiting { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--multimode); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  .sim { margin-top: 14px; font-size: 0.9rem; color: var(--muted); }
+  .sim button { padding: 6px 10px; font-size: 0.9rem; font-weight: 600; background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
+
+  .verified { border-left: 4px solid var(--ok); padding-left: 16px; }
+  .checks { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 10px; }
+  .checks li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; }
+  .checks li::before { content: "✓"; color: var(--ok); font-weight: 800; }
+  .checks li.not::before { content: "–"; color: var(--warn); }
+  .checks small { display: block; color: var(--muted); }
+  dl.released { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 16px 0 0; }
+  dl.released dt { color: var(--muted); }
+  dl.released dd { margin: 0; font-weight: 600; }
+  .link-btn { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; font-weight: 600; font-size: 0.95rem; }
+
+  aside.order { align-self: start; position: sticky; top: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 22px; }
+  aside.order h3 { margin: 0 0 12px; font-size: 1.05rem; }
+  aside.order dl { margin: 0; display: grid; gap: 10px; }
+  aside.order dt { color: var(--muted); font-size: 0.9rem; }
+  aside.order dd { margin: 0; font-weight: 600; }
+  .done-banner { background: var(--ink); color: #fff; border-radius: var(--radius-l); padding: 28px; }
+  .done-banner h2 { margin: 0 0 6px; font-size: 1.6rem; }
+  .done-banner p { margin: 4px 0; color: #d6dee5; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>NYC Fibre</div>
+  <div class="prototype-note">Prototype for a product demo. Not a real service.</div>
+</header>
+
+<main>
+  <section>
+    <h1>Fibre internet for your new place</h1>
+    <p class="lede">Moving in? Check your building, pick a plan and verify who you are. No Social Security number needed.</p>
+
+    <div class="steps">
+      <div class="fibre" aria-hidden="true"><div class="fibre-light" id="fibre-light"></div></div>
+
+      <!-- Step 1: Address -->
+      <div class="step active" id="step-address">
+        <div class="step-dot">1</div>
+        <h2>Check your address</h2>
+        <p class="summary-line" id="sum-address">Where should we connect you?</p>
+        <div class="body">
+          <form id="form-address" novalidate>
+            <label for="street">Street address</label>
+            <input id="street" name="street" autocomplete="street-address" placeholder="e.g. 2 West Loop Road">
+            <div class="row">
+              <div>
+                <label for="unit">Apartment or unit</label>
+                <input id="unit" name="unit" placeholder="e.g. 14C">
+              </div>
+              <div>
+                <label for="zip">ZIP code</label>
+                <input id="zip" name="zip" inputmode="numeric" placeholder="e.g. 10044">
+              </div>
+            </div>
+            <p class="error" id="err-address" hidden></p>
+            <div class="actions"><button type="submit" class="primary" id="check-address">Check availability</button></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Step 2: Plan -->
+      <div class="step locked" id="step-plan">
+        <div class="step-dot">2</div>
+        <h2>Choose a plan</h2>
+        <p class="summary-line" id="sum-plan">Pick a speed once we've checked your building.</p>
+        <div class="body">
+          <div class="plans" role="group" aria-label="Plans">
+            <button type="button" class="choice" data-plan="300 Mbps" data-price="$45/mo" aria-pressed="false"><span class="plan-speed">300 Mbps</span><span class="plan-price">$45 a month</span></button>
+            <button type="button" class="choice" data-plan="1 Gig" data-price="$65/mo" aria-pressed="false"><span class="plan-speed">1 Gig</span><span class="plan-price">$65 a month</span></button>
+            <button type="button" class="choice" data-plan="2 Gig" data-price="$95/mo" aria-pressed="false"><span class="plan-speed">2 Gig</span><span class="plan-price">$95 a month</span></button>
+          </div>
+          <p class="error" id="err-plan" hidden></p>
+          <div class="actions"><button type="button" class="primary" id="confirm-plan">Continue with this plan</button></div>
+        </div>
+      </div>
+
+      <!-- Step 3: Contact + install -->
+      <div class="step locked" id="step-contact">
+        <div class="step-dot">3</div>
+        <h2>Contact and installation</h2>
+        <p class="summary-line" id="sum-contact">How we reach you and when we install.</p>
+        <div class="body">
+          <form id="form-contact" novalidate>
+            <div class="row">
+              <div>
+                <label for="email">Email</label>
+                <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com">
+              </div>
+              <div>
+                <label for="phone">Mobile number</label>
+                <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="(212) 555-0142">
+              </div>
+            </div>
+            <label for="install">Installation date</label>
+            <select id="install" name="install"></select>
+            <p class="hint" style="margin-top:10px">Your name and date of birth come from identity verification in the next step, so you don't type them here.</p>
+            <p class="error" id="err-contact" hidden></p>
+            <div class="actions"><button type="submit" class="primary" id="confirm-contact">Continue to identity</button></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Step 4: Identity -->
+      <div class="step locked" id="step-identity">
+        <div class="step-dot">4</div>
+        <h2>Verify your identity</h2>
+        <p class="summary-line" id="sum-identity">We're required to confirm who opens an account.</p>
+        <div class="body">
+          <div id="id-choose">
+            <div class="id-options">
+              <button type="button" class="id-option freeid" id="verify-freeid">
+                <strong><span class="freeid-badge">Verify with FreeID</span></strong>
+                <span>No SSN? Use the passport chip on your phone. Nothing is uploaded and you approve what we see.</span>
+              </button>
+              <button type="button" class="id-option" id="use-ssn">
+                <strong>Enter your Social Security number</strong>
+                <span>We run a credit check. Takes about a minute.</span>
+              </button>
+              <button type="button" class="id-option" id="upload-passport">
+                <strong>Upload a passport photo and a selfie</strong>
+                <span>Reviewed by our verification partner. Usually 1 to 2 business days.</span>
+              </button>
+            </div>
+            <p class="error" id="err-identity" hidden></p>
+          </div>
+
+          <div id="id-freeid" hidden>
+            <div class="qr-panel">
+              <svg class="qr" id="qr" viewBox="0 0 29 29" role="img" aria-label="FreeID sign-in QR code"></svg>
+              <div>
+                <p style="margin:0 0 8px;font-weight:700;font-size:1.1rem">Scan with the FreeID app</p>
+                <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for your name, date of birth, a masked passport number and whether your passport is valid. You choose on your phone.</p>
+                <p class="waiting" id="waiting"><span class="pulse" aria-hidden="true"></span>Waiting for approval on your phone</p>
+                <p class="sim">Prototype: the phone step is simulated in this demo. <button type="button" id="simulate-approval">Simulate phone approval</button></p>
+              </div>
+            </div>
+          </div>
+
+          <div id="id-result" hidden>
+            <div class="verified">
+              <p style="margin:0;font-weight:800;font-size:1.15rem;color:var(--ok)">Identity verified with FreeID</p>
+              <ul class="checks">
+                <li><span>Passport chip checked<small>Signed by the issuing country (<span id="r-country"></span>). Verified on the holder's phone against ICAO-trusted keys.</small></span></li>
+                <li><span>Holder matched<small>Face matched to the passport photo at enrolment. We never see the photo.</small></span></li>
+                <li><span>Genuine FreeID app<small>Apple App Attest confirmed an unmodified app on a real device.</small></span></li>
+                <li class="not"><span>Credit history not checked<small>Without an SSN, a $100 refundable deposit applies.</small></span></li>
+              </ul>
+              <dl class="released">
+                <dt>Name</dt><dd id="r-name"></dd>
+                <dt>Date of birth</dt><dd id="r-dob">Shared on approval</dd>
+                <dt>Passport</dt><dd id="r-valid"></dd>
+                <dt>Passport number</dt><dd><span id="r-docno"></span> <button type="button" class="link-btn" id="request-full-number">Request full number</button></dd>
+              </dl>
+              <p class="sim" id="full-number-note" hidden>Full number requested. The holder approves this separately on their phone. <button type="button" id="simulate-full-number">Simulate approval</button></p>
+            </div>
+            <div class="actions"><button type="button" class="primary" id="create-account">Create my account</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="done-banner" id="done" hidden>
+        <h2>You're all set</h2>
+        <p id="done-detail"></p>
+        <p>Order <strong id="order-no"></strong>. We've sent the details to <span id="done-email"></span>.</p>
+      </div>
+    </div>
+  </section>
+
+  <aside class="order" aria-label="Your order">
+    <h3>Your order</h3>
+    <dl>
+      <div><dt>Address</dt><dd id="o-address">Not checked yet</dd></div>
+      <div><dt>Plan</dt><dd id="o-plan">Not chosen</dd></div>
+      <div><dt>Installation</dt><dd id="o-install">Not scheduled</dd></div>
+      <div><dt>Identity</dt><dd id="o-identity">Not verified</dd></div>
+      <div><dt>Due today</dt><dd id="o-due">$0</dd></div>
+    </dl>
+  </aside>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id)
+  // Demo values for the simulated FreeID release; override with URL parameters,
+  // e.g. ?name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031
+  const params = new URLSearchParams(location.search)
+  const demo = {
+    name: params.get('name') || 'Alex Morgan',
+    dob: params.get('dob') || '14 March 1998',
+    docno: params.get('docno') || 'K1234123Z',
+    country: params.get('country') || 'Singapore',
+    expiry: params.get('expiry') || 'April 2031',
+  }
+  const masked = '••••••' + demo.docno.slice(-4)
+  const order = ['step-address', 'step-plan', 'step-contact', 'step-identity']
+  const state = { plan: null, price: null }
+
+  function advance(fromId, summary) {
+    const from = $(fromId)
+    from.classList.remove('active')
+    from.classList.add('done')
+    from.querySelector('.summary-line').textContent = summary
+    const next = order[order.indexOf(fromId) + 1]
+    if (next) {
+      $(next).classList.remove('locked')
+      $(next).classList.add('active')
+      const focusable = $(next).querySelector('input, select, button')
+      if (focusable) focusable.focus()
+    }
+    const doneCount = order.filter((id) => $(id).classList.contains('done')).length
+    $('fibre-light').style.height = `${(doneCount / order.length) * 100}%`
+  }
+
+  function showError(id, message) {
+    const el = $(id)
+    el.textContent = message
+    el.hidden = !message
+  }
+
+  // Install dates: the next 10 weekdays
+  const install = $('install')
+  const d = new Date()
+  let added = 0
+  while (added < 10) {
+    d.setDate(d.getDate() + 1)
+    if (d.getDay() === 0 || d.getDay() === 6) continue
+    const label = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    install.add(new Option(`${label}, 8am to 12pm`, label))
+    added++
+  }
+
+  $('form-address').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const street = $('street').value.trim()
+    const zip = $('zip').value.trim()
+    if (!street || !/^\d{5}$/.test(zip)) {
+      showError('err-address', 'Enter a street address and a 5-digit ZIP code.')
+      return
+    }
+    showError('err-address', '')
+    const unit = $('unit').value.trim()
+    const full = `${street}${unit ? `, Apt ${unit}` : ''}, New York, NY ${zip}`
+    $('o-address').textContent = full
+    advance('step-address', `Fibre is available at ${full}.`)
+  })
+
+  document.querySelectorAll('.choice').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.choice').forEach((b) => b.setAttribute('aria-pressed', 'false'))
+      btn.setAttribute('aria-pressed', 'true')
+      state.plan = btn.dataset.plan
+      state.price = btn.dataset.price
+    })
+  })
+  $('confirm-plan').addEventListener('click', () => {
+    if (!state.plan) { showError('err-plan', 'Choose a plan to continue.'); return }
+    showError('err-plan', '')
+    $('o-plan').textContent = `${state.plan}, ${state.price}`
+    advance('step-plan', `${state.plan} for ${state.price}.`)
+  })
+
+  $('form-contact').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const email = $('email').value.trim()
+    const phone = $('phone').value.trim()
+    if (!/^\S+@\S+\.\S+$/.test(email) || phone.replace(/\D/g, '').length < 10) {
+      showError('err-contact', 'Enter a valid email and a 10-digit mobile number.')
+      return
+    }
+    showError('err-contact', '')
+    $('o-install').textContent = install.value
+    advance('step-contact', `${email}, ${phone}. Installation ${install.value}.`)
+  })
+
+  // Identity
+  $('use-ssn').addEventListener('click', () => showError('err-identity', 'SSN checks are not part of this prototype. Use FreeID instead.'))
+  $('upload-passport').addEventListener('click', () => showError('err-identity', 'Uploads are not part of this prototype. Use FreeID instead.'))
+
+  function drawQr() {
+    // Decorative QR-style pattern for the prototype (not a scannable code)
+    const svg = $('qr')
+    const n = 29
+    let seed = 7
+    const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 }
+    const finder = (x, y) => (
+      `<rect x="${x}" y="${y}" width="7" height="7" fill="#17232e"/>` +
+      `<rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#fff"/>` +
+      `<rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#17232e"/>`
+    )
+    let cells = ''
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const inFinder = (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9)
+        if (!inFinder && rand() > 0.52) cells += `<rect x="${x}" y="${y}" width="1" height="1" fill="#17232e"/>`
+      }
+    }
+    svg.innerHTML = cells + finder(0, 0) + finder(n - 7, 0) + finder(0, n - 7)
+  }
+
+  $('verify-freeid').addEventListener('click', () => {
+    showError('err-identity', '')
+    $('id-choose').hidden = true
+    $('id-freeid').hidden = false
+    drawQr()
+  })
+
+  $('simulate-approval').addEventListener('click', () => {
+    $('id-freeid').hidden = true
+    $('id-result').hidden = false
+    $('r-name').textContent = demo.name
+    $('r-dob').textContent = demo.dob
+    $('r-valid').textContent = `Valid until ${demo.expiry}`
+    $('r-docno').textContent = masked
+    $('r-country').textContent = demo.country
+    $('o-identity').textContent = 'Verified with FreeID'
+    $('o-due').textContent = '$100 deposit (refundable)'
+  })
+
+  $('request-full-number').addEventListener('click', () => {
+    $('full-number-note').hidden = false
+    $('request-full-number').hidden = true
+  })
+  $('simulate-full-number').addEventListener('click', () => {
+    $('r-docno').textContent = demo.docno
+    $('full-number-note').hidden = true
+  })
+
+  $('create-account').addEventListener('click', () => {
+    advance('step-identity', 'Verified with FreeID. Passport chip checked, holder matched.')
+    $('id-result').hidden = true
+    $('done').hidden = false
+    $('order-no').textContent = `NYF-${Math.floor(100000 + Math.random() * 900000)}`
+    $('done-email').textContent = $('email').value.trim()
+    $('done-detail').textContent = `${state.plan} at ${$('o-address').textContent}. Installation ${install.value}.`
+    $('done').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  })
+})()
+</script>
+</body>
+</html>
