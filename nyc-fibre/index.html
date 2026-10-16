@@ -125,6 +125,7 @@
   <section>
     <h1>Fibre internet for your new place</h1>
     <p class="lede">Moving in? Check your building, pick a plan and verify who you are. No Social Security number needed.</p>
+    <p class="error" id="return-note" role="alert" hidden></p>
 
     <div class="steps">
       <div class="fibre" aria-hidden="true"><div class="fibre-light" id="fibre-light"></div></div>
@@ -297,6 +298,21 @@
   const order = ['step-address', 'step-plan', 'step-contact', 'step-identity']
   const state = { plan: null, price: null }
   const PROGRESS_KEY = 'nyf-signup'
+  // Fixed copy for the reason codes /api/callback sends; URL text is never shown.
+  const REASONS = {
+    declined: 'You chose not to share your details. Nothing was shared with NYC Fibre.',
+    expired: 'Your FreeID sign-in expired or did not match this browser. Try again.',
+    signin: 'FreeID could not complete the sign-in. Try again.',
+    unavailable: 'We could not reach FreeID or collect your details. Try again.',
+    decrypt: 'We could not open the details your phone sent. Try again.',
+    issuer: 'The credential was not issued by FreeID.',
+    chip: 'Your passport chip check could not be confirmed. Verify your passport in the FreeID app, then try again.',
+    binding: 'Your phone\'s approval did not match this sign-in. Try again.',
+    fields: 'The details your phone sent were incomplete or not what we asked for. Try again.',
+    passport_expired: 'Your passport has expired. Use a valid passport in the FreeID app.',
+    error: 'Something went wrong verifying with FreeID. Try again.',
+  }
+  let verifiedSummary = 'Verified with FreeID.'
 
   function advance(fromId, summary) {
     const from = $(fromId)
@@ -456,7 +472,8 @@
     if (progress.completed.includes('step-address')) completeAddress()
     if (progress.completed.includes('step-plan') && state.plan) completePlan()
     if (progress.completed.includes('step-contact')) completeContact()
-    return true
+    // The identity step (where results and errors show) opens only once contact details are done
+    return $('step-contact').classList.contains('done')
   }
 
   function goToFreeId(full) {
@@ -521,6 +538,7 @@
       checks.push(['Genuine FreeID app', 'Apple App Attest confirmed an unmodified app on a real device.'])
     }
     checks.push(['Holder key bound', 'Your phone signed this release with the key bound to the credential, for this sign-in and for NYC Fibre only.'])
+    verifiedSummary = `Verified with FreeID: ${checks.map(([title]) => title[0].toLowerCase() + title.slice(1)).join(', ')}.`
     const list = $('checks')
     list.replaceChildren()
     for (const [title, detail] of checks) list.append(checkItem(title, detail))
@@ -562,7 +580,7 @@
   $('create-account').addEventListener('click', () => {
     advance('step-identity', shots
       ? 'Verified with FreeID. Passport chip checked, holder matched.'
-      : 'Verified with FreeID. Passport chip checked, holder key bound.')
+      : verifiedSummary)
     $('id-result').hidden = true
     $('done').hidden = false
     $('order-no').textContent = `NYF-${Math.floor(100000 + Math.random() * 900000)}`
@@ -575,11 +593,13 @@
   // Real mode: returning from FreeID
   const outcome = shots ? null : params.get('freeid')
   if (outcome === 'verified' || outcome === 'error') {
-    const reason = params.get('reason')
+    const reason = REASONS[params.get('reason')] || REASONS.error
     history.replaceState(null, '', location.pathname)
-    restoreProgress()
-    if (outcome === 'error') {
-      showError('err-identity', `FreeID: ${reason || 'Verification did not complete. Try again.'}`)
+    if (!restoreProgress()) {
+      // The signup lives in this tab's sessionStorage; without it there is nothing to attach the result to.
+      showError('return-note', 'We could not find your signup in this browser tab. Please start again, then verify with FreeID.')
+    } else if (outcome === 'error') {
+      showError('err-identity', `FreeID: ${reason}`)
     } else {
       fetch('/api/result', { credentials: 'same-origin', cache: 'no-store' })
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error('no result'))))

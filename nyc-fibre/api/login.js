@@ -2,7 +2,7 @@
 // FreeID, asking for a passport release. `?full=1` also asks for the full
 // passport number.
 import { createHash, randomBytes } from 'node:crypto'
-import { CLIENT_ID, FLOW_COOKIE, REDIRECT_URI, discovery, redirect, scopesFor, sealCookie } from './_lib.js'
+import { CLIENT_ID, FLOW_COOKIE, REDIRECT_URI, discovery, failureLocation, redirect, scopesFor, sealCookie } from './_lib.js'
 
 export default async function handler(req, res) {
   try {
@@ -23,9 +23,9 @@ export default async function handler(req, res) {
       code_challenge: createHash('sha256').update(verifier).digest('base64url'),
       code_challenge_method: 'S256',
     }).toString()
-    redirect(res, url.toString(), sealCookie(FLOW_COOKIE, { phase: 'login', state, nonce, verifier }, 600))
+    redirect(res, url.toString(), sealCookie(FLOW_COOKIE, { phase: 'login', state, nonce, verifier, full }, 600))
   } catch (error) {
     console.error('FreeID login failed:', error.message)
-    redirect(res, `/?freeid=error&reason=${encodeURIComponent('Could not reach FreeID. Try again.')}`)
+    redirect(res, failureLocation('unavailable'))
   }
 }

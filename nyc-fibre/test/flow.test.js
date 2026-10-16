@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { SignJWT, jwtVerify, importJWK } from 'jose'
 import { buildRelease, FIELDS, k } from './fixtures.js'
 
@@ -132,37 +133,69 @@ test('a verified release reaches the page once through /api/result', async () =>
   assert.equal(freeid.tokenRequest.get('grant_type'), 'authorization_code')
   assert.ok(freeid.tokenRequest.get('code_verifier'))
   const resultCookie = setCookies(callback).find((c) => c.startsWith('nyf_result='))
-  assert.match(resultCookie, /HttpOnly; Secure; SameSite=Lax; Max-Age=600/)
+  assert.match(resultCookie, /Path=\/api\/result; HttpOnly; Secure; SameSite=Lax; Max-Age=600/)
 
   const first = await call(api.result, { cookies: cookiePairs(callback) })
   assert.equal(first.status, 200)
+  assert.equal(first.headers['x-content-type-options'], 'nosniff')
   const body = JSON.parse(first.body)
   assert.deepEqual(body.fields, FIELDS)
   assert.equal(body.verification.app_attest, true)
-  assert.match(setCookies(first)[0], /^nyf_result=; .*Max-Age=0/)
+  assert.match(setCookies(first)[0], /^nyf_result=; Path=\/api\/result; .*Max-Age=0/)
 })
 
-test('a release bound to another sign-in is refused with a reason', async () => {
+const reasonOf = (response) => new URL(response.headers.location, 'https://nyc-fibre.test').searchParams.get('reason')
+
+test('a release bound to another sign-in is refused with a reason code', async () => {
   const { login, state } = await startLogin()
   freeid.release = await buildRelease({ iss: issuer, nonce: 'stale-nonce', now: new Date() })
   const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
-  const location = new URL(callback.headers.location, 'https://nyc-fibre.test')
-  assert.equal(location.searchParams.get('freeid'), 'error')
-  assert.equal(location.searchParams.get('reason'), 'Presentation does not match this sign-in. Try again.')
+  assert.equal(callback.headers.location, '/?freeid=error&reason=binding')
   assert.ok(!setCookies(callback).some((c) => c.startsWith('nyf_result=') && !c.includes('Max-Age=0')))
+})
+
+test('the full number is accepted only when the sign-in asked for it', async () => {
+  const full = await startLogin({ full: '1' })
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), fields: { document_number: 'K1234123Z' } })
+  const accepted = await call(api.callback, { query: { code: 'code-1', state: full.state }, cookies: cookiePairs(full.login) })
+  assert.equal(accepted.headers.location, '/?freeid=verified')
+
+  const plain = await startLogin()
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), fields: { document_number: 'K1234123Z' } })
+  const refused = await call(api.callback, { query: { code: 'code-1', state: plain.state }, cookies: cookiePairs(plain.login) })
+  assert.equal(reasonOf(refused), 'fields')
+})
+
+test('a credential without an attested chip check is refused', async () => {
+  const { login, state } = await startLogin()
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), verification: { app_attest: false } })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  assert.equal(reasonOf(callback), 'chip')
 })
 
 test('a mismatched state is refused before contacting FreeID', async () => {
   const { login } = await startLogin()
   const callback = await call(api.callback, { query: { code: 'code-1', state: 'forged' }, cookies: cookiePairs(login) })
-  assert.match(callback.headers.location, /freeid=error/)
+  assert.equal(reasonOf(callback), 'expired')
 })
 
-test('a declined release explains that nothing was shared', async () => {
+test('a decline is only honoured for this browser\'s own sign-in', async () => {
   const { login, state } = await startLogin()
-  const callback = await call(api.callback, { query: { error: 'access_denied', state }, cookies: cookiePairs(login) })
-  const location = new URL(callback.headers.location, 'https://nyc-fibre.test')
-  assert.equal(location.searchParams.get('reason'), 'You chose not to share your details.')
+  const declined = await call(api.callback, { query: { error: 'access_denied', state }, cookies: cookiePairs(login) })
+  assert.equal(reasonOf(declined), 'declined')
+  const forged = await call(api.callback, { query: { error: 'access_denied', state: 'forged' }, cookies: cookiePairs(login) })
+  assert.equal(reasonOf(forged), 'expired')
+  const noCookie = await call(api.callback, { query: { error: 'access_denied', state } })
+  assert.equal(reasonOf(noCookie), 'expired')
+})
+
+test('the page has fixed copy for every reason code and nothing else', async () => {
+  const { REASON_CODES } = await import('../api/_lib.js')
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  const block = /const REASONS = \{([\s\S]*?)\n  \}/.exec(html)
+  assert.ok(block, 'REASONS map present in the page script')
+  const keys = [...block[1].matchAll(/^\s+([a-z_]+):/gm)].map((m) => m[1])
+  assert.deepEqual([...keys].sort(), [...REASON_CODES].sort())
 })
 
 test('a tampered result cookie is ignored', async () => {

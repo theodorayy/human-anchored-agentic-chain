@@ -15,6 +15,8 @@ export const KNOWN_FIELDS = [
   'document_number_masked',
   'document_number',
 ]
+// Every release must carry these; the full number only when it was asked for.
+export const REQUIRED_FIELDS = ['given_name', 'family_name', 'birthdate', 'passport_expiry']
 const MAX_AGE_SECONDS = 5 * 60
 const MAX_SKEW_SECONDS = 60
 const BASE64URL = /^[A-Za-z0-9_-]+$/
@@ -66,6 +68,17 @@ async function verifyIssuerJwt(issuerJwt, issuerJwks, issuer, now) {
     typeof jwk.x !== 'string'
   ) {
     fail('Not a FreeID passport credential')
+  }
+  // FreeID only issues after an attested on-device passport check; anything less is refused.
+  const checks = payload.verification
+  if (
+    !checks ||
+    typeof checks !== 'object' ||
+    checks.passive_authentication !== true ||
+    checks.csca_chain !== true ||
+    checks.app_attest !== true
+  ) {
+    fail('Passport chip not verified')
   }
   return payload
 }
@@ -121,9 +134,19 @@ async function verifyKeyBinding(kbJwt, holderJwk, { sdJwt, clientId, nonce, now 
 }
 
 /**
+ * `fullNumberRequested`: whether this sign-in asked for `passport:number`.
  * @returns {Promise<{ fields: Record<string, string>, verification: object, holderKey: object }>}
  */
-export async function verifyRelease({ jwe, encPrivateJwk, issuerJwks, issuer, clientId, nonce, now = new Date() }) {
+export async function verifyRelease({
+  jwe,
+  encPrivateJwk,
+  issuerJwks,
+  issuer,
+  clientId,
+  nonce,
+  fullNumberRequested = false,
+  now = new Date(),
+}) {
   const at = now instanceof Date ? now : new Date(now)
   const presentation = await decrypt(jwe, encPrivateJwk)
 
@@ -139,17 +162,13 @@ export async function verifyRelease({ jwe, encPrivateJwk, issuerJwks, issuer, cl
   const sdJwt = presentation.slice(0, presentation.length - kbJwt.length)
   await verifyKeyBinding(kbJwt, holderKey, { sdJwt, clientId, nonce, now: at })
 
-  if (fields.passport_expiry !== undefined) {
-    if (!DATE.test(fields.passport_expiry)) fail('Malformed disclosure')
-    if (fields.passport_expiry < at.toISOString().slice(0, 10)) fail('Passport has expired')
+  if (REQUIRED_FIELDS.some((name) => fields[name] === undefined)) fail('Release is missing required details')
+  if (fields.document_number !== undefined && !fullNumberRequested) {
+    fail("Release includes a field that wasn't requested")
   }
+  if (!DATE.test(fields.passport_expiry)) fail('Malformed disclosure')
+  if (fields.passport_expiry < at.toISOString().slice(0, 10)) fail('Passport has expired')
 
-  const verification = credential.verification && typeof credential.verification === 'object' ? credential.verification : {}
-  return { fields, verification, holderKey }
+  return { fields, verification: credential.verification, holderKey }
 }
 
-// Vercel deploys every file in api/ as a function; this module is a library, not an endpoint.
-export default function handler(req, res) {
-  res.statusCode = 404
-  res.end()
-}

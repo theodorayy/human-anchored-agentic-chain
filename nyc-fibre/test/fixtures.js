@@ -47,6 +47,7 @@ export function disclosure(name, value) {
 /** Builds a release; `tweak` hooks let each test break exactly one thing. */
 export async function buildRelease(tweak = {}) {
   const fields = { ...FIELDS, ...(tweak.fields || {}) }
+  for (const name of tweak.omit || []) delete fields[name]
   const disclosures = Object.entries(fields).map(([name, value]) => disclosure(name, value))
   const iat = tweak.now ? Math.floor(tweak.now.getTime() / 1000) : nowSeconds
 
@@ -61,6 +62,7 @@ export async function buildRelease(tweak = {}) {
       liveness: 'blink',
       face_match: 'not_performed',
       app_attest: true,
+      ...(tweak.verification || {}),
     },
   })
     .setProtectedHeader({ alg: 'ES256', typ: tweak.issuerTyp || 'dc+sd-jwt', kid: 'freeid-1' })

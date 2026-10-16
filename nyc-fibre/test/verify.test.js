@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPair } from 'jose'
-import { verifyRelease } from '../api/verify.js'
+import { verifyRelease } from '../api/_verify.js'
 import { CLIENT_ID, FIELDS, ISSUER, NONCE, NOW, buildRelease, disclosure, issuerJwks, k, nowSeconds } from './fixtures.js'
 
 const verify = (jwe, overrides = {}) =>
@@ -28,9 +28,44 @@ test('a valid release verifies and returns the released fields', async () => {
 })
 
 test('a release with the full document number verifies', async () => {
-  const result = await verify(await buildRelease({ fields: { document_number: 'K1234123Z' } }))
+  const result = await verify(await buildRelease({ fields: { document_number: 'K1234123Z' } }), {
+    fullNumberRequested: true,
+  })
   assert.equal(result.fields.document_number, 'K1234123Z')
 })
+
+test('a full document number that was not requested is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ fields: { document_number: 'K1234123Z' } })), {
+    message: "Release includes a field that wasn't requested",
+  })
+})
+
+for (const name of ['given_name', 'family_name', 'birthdate', 'passport_expiry']) {
+  test(`a release without ${name} is rejected`, async () => {
+    await assert.rejects(verify(await buildRelease({ omit: [name] })), {
+      message: 'Release is missing required details',
+    })
+  })
+}
+
+test('a release with no disclosures at all is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ omit: Object.keys(FIELDS) })), {
+    message: 'Release is missing required details',
+  })
+})
+
+test('nationality and the masked number are optional', async () => {
+  const result = await verify(await buildRelease({ omit: ['nationality', 'document_number_masked'] }))
+  assert.equal(result.fields.nationality, undefined)
+})
+
+for (const check of ['passive_authentication', 'csca_chain', 'app_attest']) {
+  test(`a credential with ${check} not true is rejected`, async () => {
+    await assert.rejects(verify(await buildRelease({ verification: { [check]: false } })), {
+      message: 'Passport chip not verified',
+    })
+  })
+}
 
 test('a tampered disclosure is rejected', async () => {
   const jwe = await buildRelease({

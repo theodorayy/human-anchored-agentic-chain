@@ -2,7 +2,7 @@
 // from their phone (or declined). We exchange the code, verify the ID token,
 // collect the encrypted release from /userinfo, decrypt and verify it, and hand
 // the verified fields to the page in a short-lived sealed cookie.
-// Released values are never logged.
+// Released values are never logged; the page only ever receives a reason code.
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import {
   CLIENT_ID,
@@ -10,19 +10,47 @@ import {
   ISSUER,
   REDIRECT_URI,
   RESULT_COOKIE,
+  RESULT_COOKIE_PATH,
   clearCookie,
   discovery,
   encPrivateJwk,
+  failureLocation,
   openCookie,
   postForm,
   redirect,
   sealCookie,
 } from './_lib.js'
-import { verifyRelease } from './verify.js'
+import { verifyRelease } from './_verify.js'
 
 const RESULT_MAX_AGE_SECONDS = 600
 
-class Rejected extends Error {}
+// verifyRelease's fixed messages, grouped into the page's reason codes.
+const RELEASE_REASONS = {
+  'Could not decrypt the release': 'decrypt',
+  'Not issued by FreeID': 'issuer',
+  'Not a FreeID passport credential': 'issuer',
+  'Passport chip not verified': 'chip',
+  'Holder key binding failed': 'binding',
+  'Presentation is for another service': 'binding',
+  'Presentation does not match this sign-in': 'binding',
+  'Presentation is stale': 'binding',
+  'Presentation was altered': 'binding',
+  'Disclosure not signed by FreeID': 'fields',
+  'Duplicate disclosure': 'fields',
+  'Malformed disclosure': 'fields',
+  'Malformed release': 'fields',
+  'Unexpected field': 'fields',
+  'Release is missing required details': 'fields',
+  "Release includes a field that wasn't requested": 'fields',
+  'Passport has expired': 'passport_expired',
+}
+
+class Rejected extends Error {
+  constructor(code, detail) {
+    super(detail || code)
+    this.code = code
+  }
+}
 
 let issuerKeys
 function issuerKeySet(jwksUri) {
@@ -31,16 +59,16 @@ function issuerKeySet(jwksUri) {
 }
 
 export default async function handler(req, res) {
-  const fail = (reason) =>
-    redirect(res, `/?freeid=error&reason=${encodeURIComponent(reason)}`, clearCookie(FLOW_COOKIE))
+  const fail = (code) => redirect(res, failureLocation(code), clearCookie(FLOW_COOKIE))
   try {
     const attempt = openCookie(req, FLOW_COOKIE)
     const { code, state, error } = req.query
-    if (error === 'access_denied') return fail('You chose not to share your details.')
-    if (error) throw new Rejected('FreeID could not complete the sign-in.')
-    if (!attempt || attempt.phase !== 'login' || !code || state !== attempt.state) {
-      throw new Rejected('Sign-in expired or did not match.')
+    // Only this browser's own sign-in may end here, including a decline.
+    if (!attempt || attempt.phase !== 'login' || !state || state !== attempt.state) {
+      throw new Rejected('expired', 'flow cookie missing or state mismatch')
     }
+    if (error === 'access_denied') return fail('declined')
+    if (error || !code) throw new Rejected('signin', 'authorisation error from FreeID')
 
     const config = await discovery()
     const token = await postForm(config.token_endpoint, {
@@ -50,8 +78,7 @@ export default async function handler(req, res) {
       code_verifier: attempt.verifier,
     })
     if (!token.ok || !token.json.id_token || !token.json.access_token) {
-      console.error('FreeID token exchange failed:', token.status, token.json.error)
-      throw new Rejected('FreeID rejected the sign-in.')
+      throw new Rejected('signin', `token exchange failed (${token.status} ${token.json.error})`)
     }
 
     const keys = issuerKeySet(config.jwks_uri)
@@ -61,13 +88,14 @@ export default async function handler(req, res) {
         issuer: ISSUER,
         audience: CLIENT_ID,
         algorithms: ['ES256'],
+        requiredClaims: ['exp', 'iat'],
       }))
-    } catch {
-      throw new Rejected('FreeID sign-in could not be verified.')
+    } catch (failure) {
+      throw new Rejected('signin', `ID token: ${failure.code || failure.message}`)
     }
-    if (idToken.nonce !== attempt.nonce) throw new Rejected('Sign-in did not match this request.')
+    if (idToken.nonce !== attempt.nonce) throw new Rejected('signin', 'ID token nonce mismatch')
     if (!Array.isArray(idToken.amr) || !idToken.amr.includes('nansen')) {
-      throw new Rejected('This sign-in did not use a FreeID passport credential.')
+      throw new Rejected('signin', 'ID token amr lacks nansen')
     }
 
     const info = await fetch(config.userinfo_endpoint, {
@@ -76,8 +104,7 @@ export default async function handler(req, res) {
     })
     const type = info.headers.get('content-type') || ''
     if (!info.ok || !type.startsWith('application/jwt')) {
-      console.error('FreeID userinfo did not return a release:', info.status, type)
-      throw new Rejected('FreeID did not return your passport details.')
+      throw new Rejected('unavailable', `userinfo returned ${info.status} ${type}`)
     }
 
     // FreeID relays the phone's release unread; only our encryption key opens it.
@@ -90,9 +117,10 @@ export default async function handler(req, res) {
         issuer: ISSUER,
         clientId: CLIENT_ID,
         nonce: attempt.nonce,
+        fullNumberRequested: attempt.full === true,
       })
     } catch (failure) {
-      throw new Rejected(failure.message)
+      throw new Rejected(RELEASE_REASONS[failure.message] || 'error', failure.message)
     }
 
     redirect(res, '/?freeid=verified', [
@@ -101,15 +129,15 @@ export default async function handler(req, res) {
         RESULT_COOKIE,
         { phase: 'verified', fields: release.fields, verification: release.verification },
         RESULT_MAX_AGE_SECONDS,
+        RESULT_COOKIE_PATH,
       ),
     ])
   } catch (failure) {
     if (failure instanceof Rejected) {
-      console.error('FreeID release rejected:', failure.message)
-      const reason = /[.!?]$/.test(failure.message) ? failure.message : `${failure.message}.`
-      return fail(`${reason} Try again.`)
+      console.error(`FreeID release rejected (${failure.code}):`, failure.message)
+      return fail(failure.code)
     }
     console.error('FreeID callback failed:', failure.message)
-    fail('Something went wrong verifying with FreeID. Try again.')
+    fail('error')
   }
 }

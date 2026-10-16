@@ -12,6 +12,28 @@ export const ENC_KEY_ID = 'nyc-fibre-enc-1'
 export const FLOW_COOKIE = 'nyf_freeid'
 export const RESULT_COOKIE = 'nyf_result'
 
+export const RESULT_COOKIE_PATH = '/api/result'
+
+// Failures reach the page as short codes only; the page maps each to fixed copy,
+// so nothing from the URL is ever rendered.
+export const REASON_CODES = [
+  'declined', // the holder chose not to share
+  'expired', // flow cookie missing, expired or state mismatch
+  'signin', // token exchange or ID token failed
+  'unavailable', // FreeID unreachable or no release returned
+  'decrypt', // release not encrypted to our key
+  'issuer', // not issued by FreeID / not a passport credential
+  'chip', // passport chip or app attestation not verified
+  'binding', // key binding: holder key, audience, nonce, freshness, sd_hash
+  'fields', // missing, unexpected, unrequested, duplicate or malformed fields
+  'passport_expired',
+  'error', // anything else
+]
+
+export function failureLocation(code) {
+  return `/?freeid=error&reason=${REASON_CODES.includes(code) ? code : 'error'}`
+}
+
 const BASE_SCOPES = [
   'openid',
   'passport',
@@ -112,13 +134,13 @@ function secret() {
 }
 const sign = (name, data) => createHmac('sha256', secret()).update(`${name}.${data}`).digest('base64url')
 
-export function sealCookie(name, value, maxAgeSeconds) {
+export function sealCookie(name, value, maxAgeSeconds, path = '/') {
   const data = Buffer.from(JSON.stringify({ ...value, exp: Date.now() + maxAgeSeconds * 1000 })).toString('base64url')
-  return `${name}=${data}.${sign(name, data)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
+  return `${name}=${data}.${sign(name, data)}; Path=${path}; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`
 }
 
-export function clearCookie(name) {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+export function clearCookie(name, path = '/') {
+  return `${name}=; Path=${path}; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
 }
 
 export function openCookie(req, name) {
