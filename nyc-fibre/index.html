@@ -92,8 +92,6 @@
   .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--multimode); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
-  .sim { margin-top: 14px; font-size: 0.9rem; color: var(--muted); }
-  .sim button { padding: 6px 10px; font-size: 0.9rem; font-weight: 600; background: transparent; border: 1px dashed var(--muted); color: var(--muted); }
 
   .verified { border-left: 4px solid var(--ok); padding-left: 16px; }
   .checks { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 10px; }
@@ -229,7 +227,6 @@
                 <p style="margin:0 0 8px;font-weight:700;font-size:1.1rem">Scan with the FreeID app</p>
                 <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for your name, date of birth, a masked passport number and whether your passport is valid. You choose on your phone.</p>
                 <p class="waiting" id="waiting"><span class="pulse" aria-hidden="true"></span>Waiting for approval on your phone</p>
-                <p class="sim">Prototype: the phone step is simulated in this demo. <button type="button" id="simulate-approval">Simulate phone approval</button></p>
               </div>
             </div>
           </div>
@@ -237,7 +234,7 @@
           <div id="id-result" hidden>
             <div class="verified">
               <p style="margin:0;font-weight:800;font-size:1.15rem;color:var(--ok)">Identity verified with FreeID</p>
-              <ul class="checks">
+              <ul class="checks" id="checks">
                 <li><span>Passport chip checked<small>Signed by the issuing country (<span id="r-country"></span>). Verified on the holder's phone against ICAO-trusted keys.</small></span></li>
                 <li><span>Holder matched<small>Face matched to the passport photo at enrolment. We never see the photo.</small></span></li>
                 <li><span>Genuine FreeID app<small>Apple App Attest confirmed an unmodified app on a real device.</small></span></li>
@@ -246,10 +243,10 @@
               <dl class="released">
                 <dt>Name</dt><dd id="r-name"></dd>
                 <dt>Date of birth</dt><dd id="r-dob">Shared on approval</dd>
+                <dt data-real hidden>Nationality</dt><dd id="r-nat" data-real hidden></dd>
                 <dt>Passport</dt><dd id="r-valid"></dd>
                 <dt>Passport number</dt><dd><span id="r-docno"></span> <button type="button" class="link-btn" id="request-full-number">Request full number</button></dd>
               </dl>
-              <p class="sim" id="full-number-note" hidden>Full number requested. The holder approves this separately on their phone. <button type="button" id="simulate-full-number">Simulate approval</button></p>
             </div>
             <div class="actions"><button type="button" class="primary" id="create-account">Create my account</button></div>
           </div>
@@ -279,9 +276,13 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id)
-  // Demo values for the simulated FreeID release; override with URL parameters,
-  // e.g. ?name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031
   const params = new URLSearchParams(location.search)
+  // Screenshot mode (?shots=1): a fully simulated FreeID release with demo values,
+  // prototype notes hidden and the phone steps auto-completed. Without it the
+  // page runs the real "Verify with FreeID" flow through /api/login.
+  const shots = params.get('shots') === '1'
+  // Demo values for screenshot mode; override with URL parameters,
+  // e.g. ?shots=1&name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031
   const demo = {
     name: params.get('name') || 'Alex Morgan',
     dob: params.get('dob') || '14 March 1998',
@@ -290,13 +291,12 @@
     expiry: params.get('expiry') || 'April 2031',
   }
   const masked = '••••••' + demo.docno.slice(-4)
-  // Screenshot mode: hide prototype notes and auto-complete the phone steps
-  const shots = params.get('shots') === '1'
   if (shots) {
-    document.querySelectorAll('.prototype-note, .sim').forEach((el) => el.remove())
+    document.querySelectorAll('.prototype-note').forEach((el) => el.remove())
   }
   const order = ['step-address', 'step-plan', 'step-contact', 'step-identity']
   const state = { plan: null, price: null }
+  const PROGRESS_KEY = 'nyf-signup'
 
   function advance(fromId, summary) {
     const from = $(fromId)
@@ -332,6 +332,27 @@
     added++
   }
 
+  function completeAddress() {
+    const street = $('street').value.trim()
+    const zip = $('zip').value.trim()
+    const unit = $('unit').value.trim()
+    const full = `${street}${unit ? `, Apt ${unit}` : ''}, New York, NY ${zip}`
+    $('o-address').textContent = full
+    advance('step-address', `Fibre is available at ${full}.`)
+  }
+
+  function completePlan() {
+    $('o-plan').textContent = `${state.plan}, ${state.price}`
+    advance('step-plan', `${state.plan} for ${state.price}.`)
+  }
+
+  function completeContact() {
+    const email = $('email').value.trim()
+    const phone = $('phone').value.trim()
+    $('o-install').textContent = install.value
+    advance('step-contact', `${email}, ${phone}. Installation ${install.value}.`)
+  }
+
   $('form-address').addEventListener('submit', (e) => {
     e.preventDefault()
     const street = $('street').value.trim()
@@ -341,25 +362,26 @@
       return
     }
     showError('err-address', '')
-    const unit = $('unit').value.trim()
-    const full = `${street}${unit ? `, Apt ${unit}` : ''}, New York, NY ${zip}`
-    $('o-address').textContent = full
-    advance('step-address', `Fibre is available at ${full}.`)
+    completeAddress()
   })
 
-  document.querySelectorAll('.choice').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.choice').forEach((b) => b.setAttribute('aria-pressed', 'false'))
-      btn.setAttribute('aria-pressed', 'true')
-      state.plan = btn.dataset.plan
-      state.price = btn.dataset.price
+  function selectPlan(plan) {
+    document.querySelectorAll('.choice').forEach((b) => {
+      const chosen = b.dataset.plan === plan
+      b.setAttribute('aria-pressed', String(chosen))
+      if (chosen) {
+        state.plan = b.dataset.plan
+        state.price = b.dataset.price
+      }
     })
+  }
+  document.querySelectorAll('.choice').forEach((btn) => {
+    btn.addEventListener('click', () => selectPlan(btn.dataset.plan))
   })
   $('confirm-plan').addEventListener('click', () => {
     if (!state.plan) { showError('err-plan', 'Choose a plan to continue.'); return }
     showError('err-plan', '')
-    $('o-plan').textContent = `${state.plan}, ${state.price}`
-    advance('step-plan', `${state.plan} for ${state.price}.`)
+    completePlan()
   })
 
   $('form-contact').addEventListener('submit', (e) => {
@@ -371,8 +393,7 @@
       return
     }
     showError('err-contact', '')
-    $('o-install').textContent = install.value
-    advance('step-contact', `${email}, ${phone}. Installation ${install.value}.`)
+    completeContact()
   })
 
   // Identity
@@ -400,51 +421,172 @@
     svg.innerHTML = cells + finder(0, 0) + finder(n - 7, 0) + finder(0, n - 7)
   }
 
+  // Real mode: keep the signup in this tab while FreeID runs, then come back to it.
+  function saveProgress() {
+    const progress = {
+      street: $('street').value.trim(),
+      unit: $('unit').value.trim(),
+      zip: $('zip').value.trim(),
+      plan: state.plan,
+      price: state.price,
+      email: $('email').value.trim(),
+      phone: $('phone').value.trim(),
+      install: install.value,
+      completed: order.filter((id) => $(id).classList.contains('done')),
+    }
+    sessionStorage.setItem(PROGRESS_KEY, JSON.stringify(progress))
+  }
+
+  function restoreProgress() {
+    let progress
+    try { progress = JSON.parse(sessionStorage.getItem(PROGRESS_KEY) || 'null') } catch { progress = null }
+    if (!progress || !Array.isArray(progress.completed)) return false
+    $('street').value = progress.street || ''
+    $('unit').value = progress.unit || ''
+    $('zip').value = progress.zip || ''
+    if (progress.plan) selectPlan(progress.plan)
+    $('email').value = progress.email || ''
+    $('phone').value = progress.phone || ''
+    if (progress.install) {
+      if (![...install.options].some((o) => o.value === progress.install)) {
+        install.add(new Option(`${progress.install}, 8am to 12pm`, progress.install))
+      }
+      install.value = progress.install
+    }
+    if (progress.completed.includes('step-address')) completeAddress()
+    if (progress.completed.includes('step-plan') && state.plan) completePlan()
+    if (progress.completed.includes('step-contact')) completeContact()
+    return true
+  }
+
+  function goToFreeId(full) {
+    saveProgress()
+    location.assign(full ? '/api/login?full=1' : '/api/login')
+  }
+  // Coming back via the browser's back button restores a disabled button from cache
+  window.addEventListener('pageshow', () => { $('verify-freeid').disabled = false })
+
   $('verify-freeid').addEventListener('click', () => {
     showError('err-identity', '')
+    if (!shots) {
+      $('verify-freeid').disabled = true
+      goToFreeId(false)
+      return
+    }
     $('id-choose').hidden = true
     $('id-freeid').hidden = false
     drawQr()
-    if (shots) setTimeout(approve, 3500)
+    setTimeout(approve, 3500)
   })
 
-  function approve() {
+  function markVerified() {
+    $('id-choose').hidden = true
     $('id-freeid').hidden = true
     $('id-result').hidden = false
+    $('o-identity').textContent = 'Verified with FreeID'
+    $('o-due').textContent = '$100 deposit (refundable)'
+  }
+
+  // Screenshot mode: simulated release with demo values
+  function approve() {
+    markVerified()
     $('r-name').textContent = demo.name
     $('r-dob').textContent = demo.dob
     $('r-valid').textContent = `Valid until ${demo.expiry}`
     $('r-docno').textContent = masked
     $('r-country').textContent = demo.country
-    $('o-identity').textContent = 'Verified with FreeID'
-    $('o-due').textContent = '$100 deposit (refundable)'
   }
-  const simulate = $('simulate-approval')
-  if (simulate) simulate.addEventListener('click', approve)
 
   function revealFullNumber() {
     $('r-docno').textContent = demo.docno
-    const note = $('full-number-note')
-    if (note) note.hidden = true
   }
+
+  // Real mode: render exactly what NYC Fibre's server verified
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/
+  function longDate(value) {
+    const match = isoDate.exec(value || '')
+    if (!match) return value || ''
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+  }
+
+  function renderChecks(verification) {
+    const checks = [
+      ['Issued by FreeID', 'We verified FreeID\'s signature on the credential.'],
+    ]
+    if (verification.passive_authentication === true && verification.csca_chain === true) {
+      checks.push(['Passport chip checked', 'The chip data was signed by the issuing country, and its certificate chained to a trusted country signing authority (CSCA).'])
+    }
+    if (verification.app_attest === true) {
+      checks.push(['Genuine FreeID app', 'Apple App Attest confirmed an unmodified app on a real device.'])
+    }
+    checks.push(['Holder key bound', 'Your phone signed this release with the key bound to the credential, for this sign-in and for NYC Fibre only.'])
+    const list = $('checks')
+    list.replaceChildren()
+    for (const [title, detail] of checks) list.append(checkItem(title, detail))
+    const credit = checkItem('Credit history not checked', 'Without an SSN, a $100 refundable deposit applies.')
+    credit.classList.add('not')
+    list.append(credit)
+  }
+
+  function checkItem(title, detail) {
+    const li = document.createElement('li')
+    const span = document.createElement('span')
+    const small = document.createElement('small')
+    span.textContent = title
+    small.textContent = detail
+    span.append(small)
+    li.append(span)
+    return li
+  }
+
+  function renderRelease({ fields, verification }) {
+    markVerified()
+    renderChecks(verification || {})
+    document.querySelectorAll('[data-real]').forEach((el) => { el.hidden = false })
+    const name = [fields.given_name, fields.family_name].filter(Boolean).join(' ')
+    $('r-name').textContent = name || 'Not shared'
+    $('r-dob').textContent = fields.birthdate ? longDate(fields.birthdate) : 'Not shared'
+    $('r-nat').textContent = fields.nationality || 'Not shared'
+    $('r-valid').textContent = fields.passport_expiry ? `Valid until ${longDate(fields.passport_expiry)}` : 'Not shared'
+    $('r-docno').textContent = fields.document_number || fields.document_number_masked || 'Not shared'
+    $('request-full-number').hidden = Boolean(fields.document_number)
+  }
+
   $('request-full-number').addEventListener('click', () => {
     $('request-full-number').hidden = true
-    const note = $('full-number-note')
-    if (note) note.hidden = false
     if (shots) setTimeout(revealFullNumber, 2500)
+    else goToFreeId(true)
   })
-  const simulateFull = $('simulate-full-number')
-  if (simulateFull) simulateFull.addEventListener('click', revealFullNumber)
 
   $('create-account').addEventListener('click', () => {
-    advance('step-identity', 'Verified with FreeID. Passport chip checked, holder matched.')
+    advance('step-identity', shots
+      ? 'Verified with FreeID. Passport chip checked, holder matched.'
+      : 'Verified with FreeID. Passport chip checked, holder key bound.')
     $('id-result').hidden = true
     $('done').hidden = false
     $('order-no').textContent = `NYF-${Math.floor(100000 + Math.random() * 900000)}`
     $('done-email').textContent = $('email').value.trim()
     $('done-detail').textContent = `${state.plan} at ${$('o-address').textContent}. Installation ${install.value}.`
+    if (!shots) sessionStorage.removeItem(PROGRESS_KEY)
     $('done').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   })
+
+  // Real mode: returning from FreeID
+  const outcome = shots ? null : params.get('freeid')
+  if (outcome === 'verified' || outcome === 'error') {
+    const reason = params.get('reason')
+    history.replaceState(null, '', location.pathname)
+    restoreProgress()
+    if (outcome === 'error') {
+      showError('err-identity', `FreeID: ${reason || 'Verification did not complete. Try again.'}`)
+    } else {
+      fetch('/api/result', { credentials: 'same-origin', cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('no result'))))
+        .then(renderRelease)
+        .catch(() => showError('err-identity', 'Your FreeID verification has expired. Verify with FreeID again.'))
+    }
+  }
 })()
 </script>
 </body>

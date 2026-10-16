@@ -1,8 +1,9 @@
-// Public key FreeID uses to verify NYC Fibre's client assertions.
-import { publicJwk } from './_lib.js'
+// NYC Fibre's public keys: `sig` verifies our client assertions at FreeID;
+// `enc` is the key the holder's phone encrypts passport releases to.
+import { publicJwks } from './_lib.js'
 
 export default function handler(req, res) {
   res.setHeader('content-type', 'application/json')
   res.setHeader('cache-control', 'public, max-age=300')
-  res.end(JSON.stringify({ keys: [publicJwk()] }))
+  res.end(JSON.stringify(publicJwks()))
 }
