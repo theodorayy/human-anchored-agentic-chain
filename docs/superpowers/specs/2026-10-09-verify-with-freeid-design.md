@@ -17,9 +17,9 @@ In the relocation demo, the HAC agent signs the user up for home internet at NYC
 
 ## Changes from the chat design (please confirm)
 
-1. **No FreeID account needed.** A passport credential alone can verify with a relying party. The relying party receives a per-client pseudonymous `sub` (pairwise), so two services can't correlate the user.
+1. **No FreeID account needed.** A passport credential alone can verify with a relying party. The relying party receives a per-client pseudonymous `sub` (pairwise), so two services can't correlate the user by `sub` alone. They can still correlate the user through the presentation itself: see Known limits.
 2. **Expiry, not a validity flag.** "Passport valid" is released as the disclosed expiry date (`passport_expiry`); the relying party checks it. A boolean fixed at enrolment would go stale, and putting the expiry in FreeID's signature metadata would show passport data to FreeID.
-3. **The phone fetches the relying party's encryption key itself** from the relying party's registered JWKS URL, so FreeID cannot substitute a key and read the release.
+3. **The phone fetches the relying party's encryption key itself** from the relying party's registered JWKS URL, so FreeID never holds or relays the key. The JWKS URL itself comes from FreeID's client registry, so this protects against an honest-but-curious FreeID, not a compromised one: see Known limits.
 4. **Not CIBA.** This uses an ordinary OIDC authorization-code flow plus a QR. The existing CIBA backchannel is untouched.
 
 ## 1. Enrolment: FreeID signs salted hashes (1c)
@@ -47,7 +47,7 @@ Denial on the phone → the authorization ends with `access_denied`; nothing is 
 
 - Registered FreeID client `nyc-fibre`: `private_key_jwt`, redirect `https://nyc-fibre.vercel.app/api/callback`, JWKS with a signing key and an encryption key.
 - Serverless functions (Vercel): login (authorize redirect, sealed cookie), callback (token exchange, ID token, userinfo, decrypt, verify), and JWKS. Signup progress survives the redirect via `sessionStorage`.
-- Verification panel shows what it actually verified (issuer signature, passport chip, face match, genuine app, key binding) and the released fields; "Request full passport number" starts a second release with `passport:number`.
+- Verification panel shows what it actually verified (issuer signature, passport chip, genuine app, key binding) and which fields were received, never their values ("Name — received", "Passport valid until — checked", "Passport number — received (masked)"), with "Your details were sent securely to NYC Fibre. They aren't shown on this page." The values stay on NYC Fibre's server; the result cookie and `/api/result` carry field names and checks only, so neither the browser nor an agent driving it holds them. "Request full passport number" starts a second release with `passport:number`.
 - `?shots=1` screenshot mode stays, unchanged, for the deck.
 
 ## 4. HAC: the QR hand-off (1d)
@@ -72,3 +72,7 @@ PII tokenisation for ordinary sites (mode 1); push notifications; Android; revoc
 
 - Trust in the values rests on the genuine-app attestation at enrolment plus passive authentication; a cloned chip is not detected.
 - The relying party sees whatever fields the user approves; the masked number limits but does not remove identifiability.
+- **Cross-service correlation.** Every relying party receives the same issuer JWT and the same holder key (`cnf.jwk`), so relying parties can correlate a user across services despite the pairwise `sub`. Fix later with per-relying-party holder keys or credentials, or a zero-knowledge presentation.
+- **FreeID sees release events, not values.** FreeID learns which credential released to which client, and when; it never sees the released values.
+- **Encryption-key location is FreeID's word.** The relying party's JWKS URL comes from FreeID's client registry; a compromised FreeID could point the phone at a key it controls. The consent screen shows the JWKS host under the client name so the user can notice; that is the only mitigation.
+- **The release signature covers the challenge only.** The phone's signature to FreeID covers the challenge, not the JWE, so the pairwise `sub` in the ID token isn't cryptographically tied to the presentation in `/userinfo`.

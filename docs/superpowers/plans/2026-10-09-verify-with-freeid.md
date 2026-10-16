@@ -194,7 +194,7 @@ it('signs an SD-JWT issuer JWT holding only digests and the holder key', async (
 
 - [ ] **Step 1: Failing tests** (`node:test`, fixtures built with `jose`: an ES256 "FreeID" key, an Ed25519 holder key, a P-256 encryption key): valid release verifies and returns fields; tampered disclosure (digest not in `_sd`) → "Disclosure not signed by FreeID"; wrong `aud` → "Presentation is for another service"; wrong nonce → "Presentation does not match this sign-in"; `sd_hash` mismatch → "Presentation was altered"; issuer JWT signed by another key → "Not issued by FreeID"; `passport_expiry` in the past → "Passport has expired"; wrong decryption key → "Could not decrypt the release".
 - [ ] **Step 2:** Run `node --test nyc-fibre/test/`; expect FAIL.
-- [ ] **Step 3: Implement** `verify.js` with `jose` (`compactDecrypt`, `jwtVerify` with `typ` checks, `importJWK`, `createLocalJWKSet`/remote set) and SHA-256 via `node:crypto`; wire the API functions and page. Real mode is the default without `?shots=1`; `?shots=1` keeps today's simulated screenshot mode untouched. The verified panel lists only checks actually verified (issuer signature, passport chip + CSCA chain, genuine app, holder key binding) and the released fields; "Request full number" links to `/api/login?full=1`.
+- [ ] **Step 3: Implement** `verify.js` with `jose` (`compactDecrypt`, `jwtVerify` with `typ` checks, `importJWK`, `createLocalJWKSet`/remote set) and SHA-256 via `node:crypto`; wire the API functions and page. Real mode is the default without `?shots=1`; `?shots=1` keeps today's simulated screenshot mode untouched. The verified panel lists only checks actually verified (issuer signature, passport chip + CSCA chain, genuine app, holder key binding) and which fields were received, never their values (the values stay on NYC Fibre's server; the result cookie and `/api/result` carry field names and checks only); "Request full number" links to `/api/login?full=1`.
 - [ ] **Step 4:** Tests pass; `node -e` syntax check of the inline script as before.
 - [ ] **Step 5:** Commit `feat(nyc-fibre): verify FreeID passport releases`.
 
@@ -216,11 +216,12 @@ it('signs an SD-JWT issuer JWT holding only digests and the holder key', async (
 
 ### Task 9: Deployment runbook (controller, with Emmanuel's go-ahead)
 
-Not a code task; the controller performs these after Tasks 1–8 pass review.
+Not a code task; the controller performs these after Tasks 1–8 pass review, in this order.
 
-1. Generate and set FreeID secrets (Fly `free-identity-auth`): `FREEID_SIGNING_JWK` (new P-256 private JWK), `FREEID_SIGNING_KID`, `NANSEN_PAIRWISE_SECRET` (32 random bytes). Deploy the FreeID branch. Existing sessions/tokens become invalid (acceptable).
-2. Deploy the FreeID frontend (Vercel project for `www.free-id.org`) from the branch.
-3. NYC Fibre (Vercel `nyc-fibre`, personal scope): set `NYF_PRIVATE_JWK` (P-256 signing), `NYF_ENC_PRIVATE_JWK` (P-256 encryption), `COOKIE_SECRET`; deploy; check `/.well-known/jwks.json` lists both keys.
-4. HAC runtime (Fly `hac-agentic-runtime`): set `IDENTITY_PROVIDER_ORIGINS=https://api.free-id.org,https://www.free-id.org`; deploy runtime; deploy the Vercel web app.
-5. New iOS build (cloud EAS with auto-submit, or local) → TestFlight.
-6. Emmanuel re-scans his passport in the new build (re-issuance stores the SD-JWT), then runs: NYC Fibre in a normal browser → Verify with FreeID → scan → approve → verified panel with real fields; then "Request full number"; then the HAC-driven flow.
+0. **Base.** This branch builds on the FreeID 1a branch (`feat/on-device-passport-verification`), which is already deployed with migrations 003–005 applied on Neon (done 2026-10-01). This branch has no schema changes, so no migration runs.
+1. **FreeID server first** (Fly `free-identity-auth`). Set `FREEID_SIGNING_JWK` (new P-256 private JWK) and `FREEID_SIGNING_KID`; never change the KID afterwards, because that invalidates every credential already issued. Set `NANSEN_PAIRWISE_SECRET` (32 random bytes). Confirm `OIDC_ISSUER_URL=https://api.free-id.org`. Deploy the FreeID server branch. Existing sessions and tokens become invalid (acceptable). The server must be live **before** the new iOS build ships: the old server with the new app breaks re-issuance.
+2. **FreeID frontend** (Vercel project for `www.free-id.org`): deploy from the branch.
+3. **NYC Fibre** (Vercel `nyc-fibre`, personal scope): set `NYF_PRIVATE_JWK` (P-256 signing), `NYF_ENC_PRIVATE_JWK` (P-256 encryption), `COOKIE_SECRET`; deploy; check `/.well-known/jwks.json` lists both keys.
+4. **HAC runtime and web** (Fly `hac-agentic-runtime`): `IDENTITY_PROVIDER_ORIGINS=https://api.free-id.org,https://www.free-id.org` is set in `agentic-system/fly.toml` `[env]`; deploy the runtime, then deploy the Vercel web app.
+5. **New iOS build** (cloud EAS with auto-submit, or local) → TestFlight, only after step 1 is live.
+6. **Emmanuel re-scans** his passport in the new build (re-issuance stores the SD-JWT), then runs: NYC Fibre in a normal browser → Verify with FreeID → scan → approve → verified panel listing the received fields and checks (no values shown); then "Request full number"; then the HAC-driven flow.
