@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/.well-known/jwks.json", "destination": "/api/jwks" }]
+}

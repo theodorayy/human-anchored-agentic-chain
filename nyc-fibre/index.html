@@ -71,14 +71,14 @@
 
   .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   @media (max-width: 700px) { .plans { grid-template-columns: 1fr; } }
-  .choice { text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius-s); padding: 16px; font-weight: 400; width: 100%; }
+  .choice { text-align: left; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius-s); padding: 16px; font-weight: 400; width: 100%; color: var(--ink); }
   .choice[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
   .plan-speed { display: block; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
   .plan-price { display: block; color: var(--muted); }
 
   /* Identity options: deliberately unequal hierarchy */
   .id-options { display: grid; gap: 12px; }
-  .id-option { text-align: left; width: 100%; padding: 18px; border-radius: var(--radius-s); background: #fff; border: 1.5px solid var(--line); font-weight: 400; }
+  .id-option { text-align: left; width: 100%; padding: 18px; border-radius: var(--radius-s); background: #fff; border: 1.5px solid var(--line); font-weight: 400; color: var(--ink); }
   .id-option strong { display: block; font-size: 1.1rem; }
   .id-option span { color: var(--muted); }
   .id-option.freeid { border: 2px solid var(--ink); }
@@ -290,6 +290,11 @@
     expiry: params.get('expiry') || 'April 2031',
   }
   const masked = '••••••' + demo.docno.slice(-4)
+  // Screenshot mode: hide prototype notes and auto-complete the phone steps
+  const shots = params.get('shots') === '1'
+  if (shots) {
+    document.querySelectorAll('.prototype-note, .sim').forEach((el) => el.remove())
+  }
   const order = ['step-address', 'step-plan', 'step-contact', 'step-identity']
   const state = { plan: null, price: null }
 
@@ -400,9 +405,10 @@
     $('id-choose').hidden = true
     $('id-freeid').hidden = false
     drawQr()
+    if (shots) setTimeout(approve, 3500)
   })
 
-  $('simulate-approval').addEventListener('click', () => {
+  function approve() {
     $('id-freeid').hidden = true
     $('id-result').hidden = false
     $('r-name').textContent = demo.name
@@ -412,16 +418,23 @@
     $('r-country').textContent = demo.country
     $('o-identity').textContent = 'Verified with FreeID'
     $('o-due').textContent = '$100 deposit (refundable)'
-  })
+  }
+  const simulate = $('simulate-approval')
+  if (simulate) simulate.addEventListener('click', approve)
 
-  $('request-full-number').addEventListener('click', () => {
-    $('full-number-note').hidden = false
-    $('request-full-number').hidden = true
-  })
-  $('simulate-full-number').addEventListener('click', () => {
+  function revealFullNumber() {
     $('r-docno').textContent = demo.docno
-    $('full-number-note').hidden = true
+    const note = $('full-number-note')
+    if (note) note.hidden = true
+  }
+  $('request-full-number').addEventListener('click', () => {
+    $('request-full-number').hidden = true
+    const note = $('full-number-note')
+    if (note) note.hidden = false
+    if (shots) setTimeout(revealFullNumber, 2500)
   })
+  const simulateFull = $('simulate-full-number')
+  if (simulateFull) simulateFull.addEventListener('click', revealFullNumber)
 
   $('create-account').addEventListener('click', () => {
     advance('step-identity', 'Verified with FreeID. Passport chip checked, holder matched.')

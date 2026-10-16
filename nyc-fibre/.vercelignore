@@ -1,2 +1,5 @@
 Dockerfile
 fly.toml
+api
+package.json
+vercel.json
