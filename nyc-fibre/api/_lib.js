@@ -125,8 +125,8 @@ export async function postForm(url, params) {
 }
 
 // Tamper-proof cookies: base64url(JSON) + HMAC, HttpOnly. The flow cookie holds
-// only flow state; the result cookie holds the holder's own verified fields
-// for a few minutes, until the page reads them once.
+// only flow state; the result cookie holds, for a few minutes until the page
+// reads it once, which fields were received and which checks passed (no values).
 function secret() {
   const value = process.env.COOKIE_SECRET
   if (!value) throw new Error('COOKIE_SECRET is not configured')

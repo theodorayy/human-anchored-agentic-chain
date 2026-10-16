@@ -1,8 +1,10 @@
 // FreeID redirects here once the holder has released their passport details
 // from their phone (or declined). We exchange the code, verify the ID token,
-// collect the encrypted release from /userinfo, decrypt and verify it, and hand
-// the verified fields to the page in a short-lived sealed cookie.
-// Released values are never logged; the page only ever receives a reason code.
+// collect the encrypted release from /userinfo, decrypt and verify it, and tell
+// the page in a short-lived sealed cookie which fields arrived and which checks
+// passed. Released values stay on this server: they are never logged and never
+// reach the browser (or an agent driving it); on failure the page only ever
+// receives a reason code.
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import {
   CLIENT_ID,
@@ -20,7 +22,7 @@ import {
   redirect,
   sealCookie,
 } from './_lib.js'
-import { verifyRelease } from './_verify.js'
+import { KNOWN_FIELDS, verifyRelease } from './_verify.js'
 
 const RESULT_MAX_AGE_SECONDS = 600
 
@@ -43,6 +45,21 @@ const RELEASE_REASONS = {
   'Release is missing required details': 'fields',
   "Release includes a field that wasn't requested": 'fields',
   'Passport has expired': 'passport_expired',
+}
+
+/**
+ * What the browser may learn about a verified release: the names of the fields
+ * received and the credential's boolean checks. Never a value.
+ */
+function releaseSummary({ fields, verification }) {
+  return {
+    received: KNOWN_FIELDS.filter((name) => Object.hasOwn(fields, name)),
+    checks: {
+      passive_authentication: verification?.passive_authentication === true,
+      csca_chain: verification?.csca_chain === true,
+      app_attest: verification?.app_attest === true,
+    },
+  }
 }
 
 class Rejected extends Error {
@@ -123,11 +140,13 @@ export default async function handler(req, res) {
       throw new Rejected(RELEASE_REASONS[failure.message] || 'error', failure.message)
     }
 
+    // This prototype has no account store, so the verified values go no further
+    // than here; a real ISP would save release.fields against the new account.
     redirect(res, '/?freeid=verified', [
       clearCookie(FLOW_COOKIE),
       sealCookie(
         RESULT_COOKIE,
-        { phase: 'verified', fields: release.fields, verification: release.verification },
+        { phase: 'verified', ...releaseSummary(release) },
         RESULT_MAX_AGE_SECONDS,
         RESULT_COOKIE_PATH,
       ),

@@ -102,6 +102,7 @@
   dl.released { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 16px 0 0; }
   dl.released dt { color: var(--muted); }
   dl.released dd { margin: 0; font-weight: 600; }
+  .released-note { margin: 12px 0 0; color: var(--muted); }
   .link-btn { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; font-weight: 600; font-size: 0.95rem; }
 
   aside.order { align-self: start; position: sticky; top: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 22px; }
@@ -244,10 +245,10 @@
               <dl class="released">
                 <dt>Name</dt><dd id="r-name"></dd>
                 <dt>Date of birth</dt><dd id="r-dob">Shared on approval</dd>
-                <dt data-real hidden>Nationality</dt><dd id="r-nat" data-real hidden></dd>
                 <dt>Passport</dt><dd id="r-valid"></dd>
                 <dt>Passport number</dt><dd><span id="r-docno"></span> <button type="button" class="link-btn" id="request-full-number">Request full number</button></dd>
               </dl>
+              <p class="released-note" id="r-note" hidden></p>
             </div>
             <div class="actions"><button type="button" class="primary" id="create-account">Create my account</button></div>
           </div>
@@ -518,23 +519,16 @@
     $('r-docno').textContent = demo.docno
   }
 
-  // Real mode: render exactly what NYC Fibre's server verified
-  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/
-  function longDate(value) {
-    const match = isoDate.exec(value || '')
-    if (!match) return value || ''
-    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
-    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
-  }
-
-  function renderChecks(verification) {
+  // Real mode: NYC Fibre's server keeps the released values; the page only learns
+  // which fields arrived and which checks passed, so no value is ever shown here.
+  function renderChecks(passed) {
     const checks = [
       ['Issued by FreeID', 'We verified FreeID\'s signature on the credential.'],
     ]
-    if (verification.passive_authentication === true && verification.csca_chain === true) {
+    if (passed.passive_authentication === true && passed.csca_chain === true) {
       checks.push(['Passport chip checked', 'The chip data was signed by the issuing country, and its certificate chained to a trusted country signing authority (CSCA).'])
     }
-    if (verification.app_attest === true) {
+    if (passed.app_attest === true) {
       checks.push(['Genuine FreeID app', 'Apple App Attest confirmed an unmodified app on a real device.'])
     }
     checks.push(['Holder key bound', 'Your phone signed this release with the key bound to the credential, for this sign-in and for NYC Fibre only.'])
@@ -558,17 +552,32 @@
     return li
   }
 
-  function renderRelease({ fields, verification }) {
+  function renderReceived({ received, checks }) {
     markVerified()
-    renderChecks(verification || {})
-    document.querySelectorAll('[data-real]').forEach((el) => { el.hidden = false })
-    const name = [fields.given_name, fields.family_name].filter(Boolean).join(' ')
-    $('r-name').textContent = name || 'Not shared'
-    $('r-dob').textContent = fields.birthdate ? longDate(fields.birthdate) : 'Not shared'
-    $('r-nat').textContent = fields.nationality || 'Not shared'
-    $('r-valid').textContent = fields.passport_expiry ? `Valid until ${longDate(fields.passport_expiry)}` : 'Not shared'
-    $('r-docno').textContent = fields.document_number || fields.document_number_masked || 'Not shared'
-    $('request-full-number').hidden = Boolean(fields.document_number)
+    renderChecks(checks || {})
+    const got = new Set(Array.isArray(received) ? received : [])
+    const rows = []
+    if (got.has('given_name') || got.has('family_name')) rows.push(['Name', 'Received'])
+    if (got.has('birthdate')) rows.push(['Date of birth', 'Received'])
+    if (got.has('nationality')) rows.push(['Nationality', 'Received'])
+    if (got.has('passport_expiry')) rows.push(['Passport valid until', 'Checked'])
+    const full = got.has('document_number')
+    if (full) rows.push(['Passport number', 'Received (full)'])
+    else if (got.has('document_number_masked')) rows.push(['Passport number', 'Received (masked)'])
+    const list = document.querySelector('dl.released')
+    const requestFull = $('request-full-number')
+    list.replaceChildren()
+    for (const [label, status] of rows) {
+      const dt = document.createElement('dt')
+      const dd = document.createElement('dd')
+      dt.textContent = label
+      dd.textContent = status
+      if (label === 'Passport number' && !full) dd.append(' ', requestFull)
+      list.append(dt, dd)
+    }
+    requestFull.hidden = full
+    $('r-note').textContent = "Your details were sent securely to NYC Fibre. They aren't shown on this page."
+    $('r-note').hidden = false
   }
 
   $('request-full-number').addEventListener('click', () => {
@@ -603,7 +612,7 @@
     } else {
       fetch('/api/result', { credentials: 'same-origin', cache: 'no-store' })
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error('no result'))))
-        .then(renderRelease)
+        .then(renderReceived)
         .catch(() => showError('err-identity', 'Your FreeID verification has expired. Verify with FreeID again.'))
     }
   }

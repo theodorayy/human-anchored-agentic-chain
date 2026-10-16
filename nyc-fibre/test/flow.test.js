@@ -124,7 +124,26 @@ test('the JWKS publishes the signing and encryption public keys only', async () 
   assert.ok(keys.every((key) => key.d === undefined))
 })
 
-test('a verified release reaches the page once through /api/result', async () => {
+// Released values stay on NYC Fibre's server: the browser (and so an agent
+// driving it) only learns which fields arrived and which checks passed.
+const FULL_NUMBER = 'K1234123Z'
+const releasedValues = (fields) =>
+  Object.values(fields).flatMap((value) => [value, value.replace(/^•+/, '')])
+
+function decodedCookies(response) {
+  return setCookies(response).map((cookie) => {
+    // Compare against the decoded payload, not the base64url text, so short values can't match by chance.
+    const [pair, ...attributes] = cookie.split(';')
+    const data = pair.slice(pair.indexOf('=') + 1).split('.')[0]
+    return `${attributes.join(';')}\n${data ? Buffer.from(data, 'base64url').toString() : ''}`
+  })
+}
+
+function assertNoValues(text, values, where) {
+  for (const value of values) assert.ok(!text.includes(value), `${where} must not carry a released value`)
+}
+
+test('a verified release reaches the page once through /api/result, without any values', async () => {
   const { login, state } = await startLogin()
   freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date() })
 
@@ -139,9 +158,42 @@ test('a verified release reaches the page once through /api/result', async () =>
   assert.equal(first.status, 200)
   assert.equal(first.headers['x-content-type-options'], 'nosniff')
   const body = JSON.parse(first.body)
-  assert.deepEqual(body.fields, FIELDS)
-  assert.equal(body.verification.app_attest, true)
+  assert.deepEqual(body, {
+    received: ['given_name', 'family_name', 'birthdate', 'nationality', 'passport_expiry', 'document_number_masked'],
+    checks: { passive_authentication: true, csca_chain: true, app_attest: true },
+  })
   assert.match(setCookies(first)[0], /^nyf_result=; Path=\/api\/result; .*Max-Age=0/)
+
+  const values = releasedValues(FIELDS)
+  assertNoValues(callback.headers.location, values, 'the callback redirect')
+  assertNoValues(decodedCookies(callback).join('\n'), values, 'the result cookie')
+  assertNoValues(first.body, values, 'the /api/result body')
+  assertNoValues(JSON.stringify(first.headers), values, 'the /api/result headers')
+})
+
+test('a release with the full number reports it as received, never its value', async () => {
+  const { login, state } = await startLogin({ full: '1' })
+  const fields = { document_number: FULL_NUMBER }
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), fields })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  assert.equal(callback.headers.location, '/?freeid=verified')
+  const result = await call(api.result, { cookies: cookiePairs(callback) })
+  assert.ok(JSON.parse(result.body).received.includes('document_number'))
+
+  const values = releasedValues({ ...FIELDS, ...fields })
+  assertNoValues(decodedCookies(callback).join('\n'), values, 'the result cookie')
+  assertNoValues(result.body, values, 'the /api/result body')
+})
+
+test('the page renders only field names and checks, never released values', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  const script = /<script>([\s\S]*)<\/script>/.exec(html)[1]
+  // Real mode reads /api/result's `received` and `checks`; nothing on the page reads a field's value.
+  assert.ok(!/\bfields\s*[.[]|\{\s*fields\b/.test(script), 'the page script must not handle released fields')
+  for (const name of ['given_name', 'family_name', 'birthdate', 'nationality', 'passport_expiry', 'document_number']) {
+    assert.ok(!new RegExp(`\\.${name}\\b`).test(script), `the page script must not read ${name} as a value`)
+  }
+  assert.ok(script.includes("Your details were sent securely to NYC Fibre. They aren't shown on this page."))
 })
 
 const reasonOf = (response) => new URL(response.headers.location, 'https://nyc-fibre.test').searchParams.get('reason')
@@ -199,7 +251,7 @@ test('the page has fixed copy for every reason code and nothing else', async () 
 })
 
 test('a tampered result cookie is ignored', async () => {
-  const forged = `nyf_result=${Buffer.from(JSON.stringify({ phase: 'verified', fields: {}, exp: Date.now() + 60000 })).toString('base64url')}.bad`
+  const forged = `nyf_result=${Buffer.from(JSON.stringify({ phase: 'verified', received: [], checks: {}, exp: Date.now() + 60000 })).toString('base64url')}.bad`
   const response = await call(api.result, { cookies: [forged] })
   assert.equal(response.status, 404)
 })
