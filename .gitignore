@@ -143,4 +143,5 @@ vite.config.ts.timestamp-*
 .vite/
 
 # macOS
-.DS_Store.superpowers/
+.DS_Store
+.superpowers/
