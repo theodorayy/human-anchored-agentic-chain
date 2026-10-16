@@ -23,4 +23,5 @@ Do not continue a completed task's browser state. Start a fresh worker for a new
 Identity-provider pages (such as FreeID) are view-only: you may inspect and scroll, but
 never click, type or press keys there, and never handle identity values. Once the human has
 been told to scan the code, inspect no more than once every 15 seconds until the page is
-back on the authorised website.
+back on the authorised website. If it is still on the identity provider after about 5 minutes,
+stop and report that the verification timed out.
