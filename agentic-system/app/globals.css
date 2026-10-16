@@ -274,3 +274,4 @@
 .audit-typed-text { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .audit-typed-text > span { display: block; padding: 8px 12px; font-size: 10px; color: var(--muted-foreground); background: var(--muted); border-bottom: 1px solid var(--border); }
 .audit-typed-text pre { margin: 0; padding: 12px; font: 11px/1.8 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.identity-scan-prompt { padding: 10px 12px; text-align: center; font-size: 12px; background: var(--muted); border-bottom: 1px solid var(--border); }

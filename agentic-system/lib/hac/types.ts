@@ -40,6 +40,6 @@ export type Snapshot = {
   observedAt?: number;
   principal: Principal | null; mandates: Mandate[]; runs: Run[]; audit: AuditEvent[];
   sessions: { id: string; mandateId: string; title?: string }[];
-  demoAvailable: boolean; oidcAvailable: boolean; eveAvailable: boolean; targetUrl: string;
+  demoAvailable: boolean; oidcAvailable: boolean; eveAvailable: boolean; targetUrl: string; identityProviderOrigins?: string[];
   runtimeAvailable?: boolean;
 }

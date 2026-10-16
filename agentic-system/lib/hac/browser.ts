@@ -3,6 +3,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { claimExecution, checkCurrentAuthority, completeExecution, HttpError } from "./control-plane"
+import { identityProviderOrigins } from "./policy"
 import type { Run } from "./types"
 
 type Worker = { browser: Browser; context: BrowserContext; page: Page; mandateId: string; principalId: string; timer: NodeJS.Timeout; busy: boolean; currentRun: Run }
@@ -32,12 +33,14 @@ async function getWorker(run: Run) {
       timer: setTimeout(() => void closeWorker(run.workerId), 600_000), busy: false, currentRun: run }
     worker.timer.unref()
     const active = worker
-    // Every request, redirect, subresource and popup stays inside the grant's origin.
+    // Every request, redirect, subresource and popup stays inside the grant's origin,
+    // plus the configured identity providers, whose pages the agent may only view.
     // No user's browser profile, host credentials, shell or arbitrary JS is exposed.
     await context.route("**/*", async route => {
       try {
         checkCurrentAuthority(active.currentRun)
-        if (new URL(route.request().url()).origin !== active.currentRun.delegation.scope.origin) return await route.abort("blockedbyclient")
+        const origin = new URL(route.request().url()).origin
+        if (origin !== active.currentRun.delegation.scope.origin && !identityProviderOrigins().includes(origin)) return await route.abort("blockedbyclient")
         await route.continue()
       } catch { await route.abort("blockedbyclient") }
     })
@@ -74,15 +77,28 @@ export async function executeBrowser(runId: string, capability: string) {
     const action = run.action
     if (action.kind === "navigate") await page.goto(action.url, { waitUntil: "domcontentloaded", timeout: 25_000 })
     else {
-      if (new URL(page.url()).origin !== run.delegation.scope.origin) throw new Error("Browser is outside its delegated origin.")
+      const pageOrigin = new URL(page.url()).origin
+      if (pageOrigin !== run.delegation.scope.origin) {
+        if (!identityProviderOrigins().includes(pageOrigin)) throw new Error("Browser is outside its delegated origin.")
+        if (["click", "type", "press"].includes(action.kind)) throw new Error("Identity provider pages are view-only for the agent")
+      }
       if (action.kind === "click") await page.mouse.click(action.x, action.y)
       if (action.kind === "type") await page.keyboard.insertText(action.text)
       if (action.kind === "press") await page.keyboard.press(action.key)
       if (action.kind === "scroll") await page.mouse.wheel(0, action.deltaY)
     }
-    await page.waitForLoadState("domcontentloaded")
     // Two animation frames allow synchronous click handlers and layout to settle.
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    // A click can start a navigation (such as a redirect to an identity provider), which destroys
+    // the execution context; wait for the new document and settle again.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await page.waitForLoadState("domcontentloaded")
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+        break
+      } catch (error) {
+        if (attempt >= 3 || !(error instanceof Error) || !/context was destroyed|navigation/i.test(error.message)) throw error
+      }
+    }
     checkCurrentAuthority(run)
     const screenshotId = randomUUID()
     const screenshot = await page.screenshot({ type: "png" })

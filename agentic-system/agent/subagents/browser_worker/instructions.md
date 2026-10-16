@@ -20,3 +20,7 @@ authorized target to recover. Re-inspect the current state; never repeat a compl
 consequential action just to reconstruct browser history.
 After completing the entire task, close the browser context and report evidence-based results.
 Do not continue a completed task's browser state. Start a fresh worker for a new subtask.
+Identity-provider pages (such as FreeID) are view-only: you may inspect and scroll, but
+never click, type or press keys there, and never handle identity values. Once the human has
+been told to scan the code, inspect no more than once every 15 seconds until the page is
+back on the authorised website.

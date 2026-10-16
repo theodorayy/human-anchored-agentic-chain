@@ -3,6 +3,14 @@ import { z } from "zod"
 import type { Grant, Mandate, Run, State, AuditEvent, BrowserAction } from "./types"
 
 export const targetUrl = () => process.env.BROWSER_TARGET_URL || "https://clearance-review-demo.vercel.app"
+export function identityProviderOrigins(): string[] {
+  const scope = new URL(targetUrl()).origin
+  const origins = new Set<string>()
+  for (const entry of (process.env.IDENTITY_PROVIDER_ORIGINS || "").split(",")) {
+    try { const origin = new URL(entry.trim()).origin; if (origin !== "null" && origin !== scope) origins.add(origin) } catch { /* ignore blank or invalid entries */ }
+  }
+  return [...origins]
+}
 export const mandateInput = z.object({
   title: z.string().trim().min(3).max(100),
   maxActions: z.number().int().min(1).max(200),
