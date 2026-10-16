@@ -39,8 +39,18 @@ async function getWorker(run: Run) {
     await context.route("**/*", async route => {
       try {
         checkCurrentAuthority(active.currentRun)
-        const origin = new URL(route.request().url()).origin
-        if (origin !== active.currentRun.delegation.scope.origin && !identityProviderOrigins().includes(origin)) return await route.abort("blockedbyclient")
+        const request = route.request()
+        const origin = new URL(request.url()).origin
+        if (origin !== active.currentRun.delegation.scope.origin) {
+          // An identity provider is reachable only as the top-level page: a main-frame navigation
+          // (each redirect hop is routed separately), or a main-frame request made while the page
+          // is already on an identity-provider origin. Sub-frames and target-origin documents never reach it.
+          const providers = identityProviderOrigins()
+          const mainFrame = request.frame() === page.mainFrame()
+          const topLevel = mainFrame && request.isNavigationRequest()
+          const fromProviderPage = mainFrame && providers.includes(new URL(page.url()).origin)
+          if (!providers.includes(origin) || !(topLevel || fromProviderPage)) return await route.abort("blockedbyclient")
+        }
         await route.continue()
       } catch { await route.abort("blockedbyclient") }
     })
@@ -82,9 +92,12 @@ export async function executeBrowser(runId: string, capability: string) {
         if (!identityProviderOrigins().includes(pageOrigin)) throw new Error("Browser is outside its delegated origin.")
         if (["click", "type", "press"].includes(action.kind)) throw new Error("Identity provider pages are view-only for the agent")
       }
+      const before = page.url()
       if (action.kind === "click") await page.mouse.click(action.x, action.y)
       if (action.kind === "type") await page.keyboard.insertText(action.text)
       if (action.kind === "press") await page.keyboard.press(action.key)
+      // Give a click or key press a brief window to start a redirect so it appears in this run's evidence.
+      if (action.kind === "click" || action.kind === "press") await page.waitForURL(url => url.href !== before, { timeout: 2_000, waitUntil: "domcontentloaded" }).catch(() => undefined)
       if (action.kind === "scroll") await page.mouse.wheel(0, action.deltaY)
     }
     // Two animation frames allow synchronous click handlers and layout to settle.
@@ -96,7 +109,7 @@ export async function executeBrowser(runId: string, capability: string) {
         await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
         break
       } catch (error) {
-        if (attempt >= 3 || !(error instanceof Error) || !/context was destroyed|navigation/i.test(error.message)) throw error
+        if (attempt >= 3 || !(error instanceof Error) || !/Execution context was destroyed/.test(error.message)) throw error
       }
     }
     checkCurrentAuthority(run)
@@ -104,8 +117,11 @@ export async function executeBrowser(runId: string, capability: string) {
     const screenshot = await page.screenshot({ type: "png" })
     await mkdir(resolve(/* turbopackIgnore: true */ process.env.HAC_DATA_DIR || ".hac", "screenshots"), { recursive: true, mode: 0o700 })
     await writeFile(artifactPath(screenshotId), screenshot, { mode: 0o600 })
+    const finalOrigin = new URL(page.url()).origin
+    const moved = finalOrigin !== run.delegation.scope.origin && identityProviderOrigins().includes(finalOrigin) && ["click", "press"].includes(action.kind)
+    const note = moved ? `The page moved to the identity provider ${finalOrigin}, which is view-only for the agent.\n` : ""
     const result = completeExecution(run.id, { screenshotId, pageUrl: page.url(), pageTitle: await page.title(),
-      observation: (await page.locator("body").innerText()).slice(0, 12_000) })
+      observation: (note + await page.locator("body").innerText()).slice(0, 12_000) })
     return { ...result, screenshotBase64: screenshot.toString("base64") }
   } catch (error) {
     return completeExecution(run.id, {}, error instanceof Error ? error.message.slice(0, 500) : "Browser execution failed.")

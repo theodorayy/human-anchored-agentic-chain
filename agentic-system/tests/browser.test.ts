@@ -40,15 +40,19 @@ test("real Chromium enforces approval, executes once, captures evidence, and blo
 })
 test("the browser follows an identity-provider redirect but cannot act on its pages", async () => {
   const page = (title: string, body = "") => `<html><head><title>${title}</title></head><body style="height:3000px">${body}</body></html>`
-  const provider = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(page("Identity provider", '<input id="field" style="position:absolute;left:10px;top:10px;width:200px;height:40px">')) })
+  const second = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(page("Identity provider", '<input id="field" style="position:absolute;left:10px;top:10px;width:200px;height:40px">')) })
+  await new Promise<void>(resolve => second.listen(0, "127.0.0.1", resolve))
+  const providerOrigin = `http://127.0.0.1:${(second.address() as { port: number }).port}`
+  // The first provider origin redirects to the second, as api.free-id.org does to www.free-id.org.
+  const provider = createServer((_req, res) => { res.statusCode = 302; res.setHeader("location", `${providerOrigin}/verify`); res.end() })
   await new Promise<void>(resolve => provider.listen(0, "127.0.0.1", resolve))
-  const providerOrigin = `http://127.0.0.1:${(provider.address() as { port: number }).port}`
-  const target = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(page("Target", `<a href="${providerOrigin}/verify" style="position:absolute;left:10px;top:10px;width:300px;height:60px;display:block">Verify with FreeID</a><a href="https://example.com" style="position:absolute;left:10px;top:120px">Third origin</a>`)) })
+  const firstOrigin = `http://127.0.0.1:${(provider.address() as { port: number }).port}`
+  const target = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(page("Target", `<a href="${firstOrigin}/start" style="position:absolute;left:10px;top:10px;width:300px;height:60px;display:block">Verify with FreeID</a><a href="https://example.com" style="position:absolute;left:10px;top:120px">Third origin</a>`)) })
   await new Promise<void>(resolve => target.listen(0, "127.0.0.1", resolve))
   const previousTarget = process.env.BROWSER_TARGET_URL
   process.env.BROWSER_TARGET_URL = `http://127.0.0.1:${(target.address() as { port: number }).port}`
-  process.env.IDENTITY_PROVIDER_ORIGINS = `${providerOrigin}/ignored/path, not a url, ,`
-  assert.deepEqual(identityProviderOrigins(), [providerOrigin])
+  process.env.IDENTITY_PROVIDER_ORIGINS = `${firstOrigin}/ignored/path, not a url, , ${providerOrigin}`
+  assert.deepEqual(identityProviderOrigins(), [firstOrigin, providerOrigin])
   const m = createMandate(human, { title: "Identity provider test", maxActions: 20, durationHours: 1, requireApproval: false })
   const run = async (action: Parameters<typeof delegateBrowser>[2]) => { const r = delegateBrowser(human, m.id, action, "idp-worker", "eve"); return executeBrowser(r.id, r.delegation.signature) }
   try {
@@ -70,6 +74,34 @@ test("the browser follows an identity-provider redirect but cannot act on its pa
     const blocked = await run({ kind: "click", x: 50, y: 130 })
     assert.notEqual(blocked.pageTitle, "Example Domain")
     assert.ok(!(blocked.pageUrl ?? "").startsWith("https://example.com"), blocked.pageUrl)
+  } finally {
+    await closeMandateBrowsers(m.id)
+    delete process.env.IDENTITY_PROVIDER_ORIGINS
+    process.env.BROWSER_TARGET_URL = previousTarget
+    provider.close(); second.close(); target.close()
+  }
+})
+
+test("identity providers cannot be reached from target frames or scripts", async () => {
+  let providerRequests = 0
+  const provider = createServer((_req, res) => { providerRequests++; res.setHeader("content-type", "text/html"); res.end('<html><head><title>Provider</title></head><body><button style="position:absolute;left:0;top:0;width:1280px;height:800px">Provider button</button></body></html>') })
+  await new Promise<void>(resolve => provider.listen(0, "127.0.0.1", resolve))
+  const providerOrigin = `http://127.0.0.1:${(provider.address() as { port: number }).port}`
+  const target = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(`<html><head><title>Target</title></head><body><iframe src="${providerOrigin}/frame" style="position:absolute;left:0;top:0;width:1280px;height:400px;border:0"></iframe><script>fetch("${providerOrigin}/fetch",{mode:"no-cors"}).then(()=>{document.title="fetched"},()=>{document.title="fetch blocked"})</script></body></html>`) })
+  await new Promise<void>(resolve => target.listen(0, "127.0.0.1", resolve))
+  const previousTarget = process.env.BROWSER_TARGET_URL
+  process.env.BROWSER_TARGET_URL = `http://127.0.0.1:${(target.address() as { port: number }).port}`
+  process.env.IDENTITY_PROVIDER_ORIGINS = providerOrigin
+  const m = createMandate(human, { title: "Frame isolation test", maxActions: 20, durationHours: 1, requireApproval: false })
+  const run = async (action: Parameters<typeof delegateBrowser>[2]) => { const r = delegateBrowser(human, m.id, action, "frame-worker", "eve"); return executeBrowser(r.id, r.delegation.signature) }
+  try {
+    const opened = await run({ kind: "navigate", url: process.env.BROWSER_TARGET_URL })
+    assert.equal(opened.status, "completed", opened.reason)
+    await run({ kind: "inspect" })
+    const clicked = await run({ kind: "click", x: 100, y: 100 })
+    assert.equal(clicked.status, "completed", clicked.reason)
+    assert.equal(clicked.pageTitle, "fetch blocked")
+    assert.equal(providerRequests, 0)
   } finally {
     await closeMandateBrowsers(m.id)
     delete process.env.IDENTITY_PROVIDER_ORIGINS
