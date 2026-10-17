@@ -1,10 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useTheme } from "next-themes"
-import { RiAddLine, RiArrowRightUpLine, RiChat3Line, RiCloseLine, RiComputerLine, RiFileList3Line, RiGitBranchLine, RiLoader4Line, RiLogoutBoxRLine, RiMoonLine, RiQrCodeLine, RiShieldCheckLine, RiSunLine, RiUser3Line, RiDownload2Line, RiDeleteBinLine } from "@remixicon/react"
+import { RiAddLine, RiArrowRightUpLine, RiChat3Line, RiCloseLine, RiComputerLine, RiFileList3Line, RiGitBranchLine, RiLoader4Line, RiLogoutBoxRLine, RiMoonLine, RiQrCodeLine, RiShieldCheckLine, RiSunLine, RiUser3Line, RiDownload2Line, RiDeleteBinLine, RiDraggable, RiSubtractLine, RiExpandUpDownLine } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { AgentChat, type Continuation, type TaskPermissions } from "./agent-chat"
@@ -23,6 +23,21 @@ const auditLabel = (a: AuditEvent) => ({ "mandate.created": "You granted permiss
 
 export function ControlRoom({ sessionId }: { sessionId?: string }) {
   const [boundSessionId, setBoundSessionId] = useState(sessionId)
+  const [chatOpen, setChatOpen] = useState(true)
+  // The dock renders only after the snapshot loads, so reading storage here cannot cause a hydration mismatch.
+  const [chatWidth, setChatWidth] = useState(() => typeof window === "undefined" ? 440 : Math.max(360, Number(window.localStorage.getItem("sisyphus.chat-width")) || 440))
+  const resizeChat = useCallback((width: number) => {
+    const next = Math.round(Math.min(Math.max(width, 360), Math.max(360, window.innerWidth - 32)))
+    setChatWidth(next); window.localStorage.setItem("sisyphus.chat-width", String(next))
+  }, [])
+  function startChatResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    const startX = event.clientX, startWidth = chatWidth
+    const onMove = (move: PointerEvent) => resizeChat(startWidth + startX - move.clientX)
+    const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); document.body.classList.remove("resizing-chat") }
+    document.body.classList.add("resizing-chat")
+    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp)
+  }
   const [snapshot, setSnapshot] = useState<Snapshot>(empty)
   const [loaded, setLoaded] = useState(false)
   const [tab, setTab] = useState("Task")
@@ -93,7 +108,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
   const allAudit = auditScope === "all" || !boundSessionId
   const audit = allAudit ? snapshot.audit : snapshot.audit.filter(a => a.runId ? runIds.has(a.runId) : a.mandateId === mandateId || (a.event === "session.started" && a.detail.includes(boundSessionId!)))
   const runtimeReady = snapshot.runtimeAvailable !== false && snapshot.eveAvailable
-  return <div className="control-room">
+  return <div className="control-room" style={{ "--chat-space": loaded && chatOpen ? `min(${chatWidth}px, calc(100vw - 2rem))` : "0px" } as CSSProperties}>
     <aside className="sidebar">
       <Link href="/workspace" className="brand"><span className="brand-ball" aria-hidden="true"/><span><span className="brand-name">Sisyphus</span><span className="brand-caption">Browser workspace</span></span></Link>
       <a href="/workspace" className="new-session" aria-label="New task"><RiAddLine size={17}/> New task <span>↗</span></a>
@@ -107,15 +122,18 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
         {(error || notice) && <div className={`global-message ${error ? "error" : ""}`} role={error ? "alert" : "status"}>{error || notice}<button aria-label="Dismiss notice" onClick={() => { setError(""); setNotice("") }}><RiCloseLine size={15}/></button></div>}
         {!loaded ? <div className="loading"><RiLoader4Line className="animate-spin"/>Loading your workspace…</div> : <div className="workspace-body">
           <section className="primary-panel">
-            <div className="task-pane" hidden={tab !== "Task"}><AgentChat snapshot={snapshot} mandateId={mandateId} sessionId={sessionId} onSession={setBoundSessionId} onCreatePermissions={createPermissions} continuation={continuation}/></div>
-            {tab === "Architecture" && <Architecture/>}
-            {tab === "Audit log" && <div className="activity-view"><div className="section-title"><div><span className="eyebrow">Audit log</span><h2>What happened, and why.</h2><p>Permissions, proposed actions, your approvals, and browser results.</p></div><a href="/api/audit/export" download className="export-link"><RiDownload2Line size={15}/>Export all</a></div>
-              {boundSessionId && <div className="audit-filter"><button className={!allAudit ? "selected" : ""} onClick={() => setAuditScope("task")}>This task</button><button className={allAudit ? "selected" : ""} onClick={() => setAuditScope("all")}>All tasks</button></div>}
-              <div className="audit-list">{audit.length === 0 ? <div className="empty-state"><RiFileList3Line size={30}/><h3>No actions recorded yet.</h3><p>Start a task to see Sisyphus’s work and the decisions behind it.</p></div> : audit.map(a => <article key={a.id}>{a.event.includes("deny") || a.event.includes("failed") || a.event.includes("rejected") || a.event.includes("revoked") ? <span className="audit-symbol denied" aria-hidden="true"/> : <span className="audit-symbol"><Check/></span>}<div><strong>{auditLabel(a)}</strong><p>{a.detail}</p>{a.typedText !== undefined && <div className="audit-typed-text"><span>Text entered</span><pre>{a.typedText}</pre></div>}<details className="audit-detail"><summary>Technical details</summary><small>{a.actionDetail && <>{a.actionDetail}<br/></>}{a.event} · {a.actor}<br/>Event: {a.id}{a.runId && <><br/>Action: {a.runId}</>}</small></details></div><time dateTime={a.at} title={new Date(a.at).toLocaleString()}>{time(a.at)}</time></article>)}</div>
-            </div>}
-          </section>
-          <aside className="context-panel"><div className="context-title"><RiShieldCheckLine size={17}/><h2>Task details</h2></div>
-            {!boundSessionId && <div className="task-explainer"><strong>Start with a task</strong><p>Describe what you want in the chat. You’ll choose Sisyphus’s permissions before anything runs.</p><ol><li>Sisyphus opens the demo in its browser.</li><li>You follow the work here.</li><li>If an action needs approval, it appears here with a button.</li></ol><p>The Audit log records each action and decision.</p></div>}
+            {tab === "Task" && <><div className="task-view">
+              <div className="task-view-head"><span className="eyebrow">Task details</span><h1>{task?.title || (boundSessionId ? "Current task" : "Start with a task")}</h1></div>
+            {!boundSessionId && <div className="task-explainer task-explainer-main"><strong>Start with a task</strong><p>Describe what you want in the chat. You’ll choose Sisyphus’s permissions before anything runs.</p><ol><li>Sisyphus opens the demo in its browser.</li><li>You follow the work here.</li><li>If an action needs approval, it appears here with a button.</li></ol><p>The Audit log records each action and decision.</p></div>}
+              <div className="task-grid">
+              <div className="task-grid-main">
+            {boundSessionId && <section className="context-section browser-section"><div className="context-section-heading"><span className="eyebrow">Sisyphus’s browser</span><RiComputerLine size={16}/></div><div className="browser-card sy-window"><div className="sy-window__bar"><i/><i/><i/><small>{pageHost}</small></div>{onIdentityProvider && <div className="identity-scan-prompt" role="status"><span className="sy-check"><RiQrCodeLine aria-hidden="true"/></span><span><strong>Scan this code with your FreeID app</strong><small>Waiting for you</small></span></div>}{latest?.screenshotId ? <button className="browser-screenshot" onClick={() => setImageId(latest.screenshotId!)} aria-label="Enlarge browser screenshot"><Image unoptimized width={1280} height={800} src={`/api/screenshots/${latest.screenshotId}`} alt="Latest screenshot from this task’s browser"/></button> : <div className="browser-empty"><RiComputerLine size={28}/><p>Waiting for Sisyphus to open the website</p></div>}</div>
+              <div className="browser-footer"><span>{latest ? `Captured ${time(latest.createdAt)}` : "Screenshots appear as Sisyphus works"}</span>{latest && <button onClick={() => setImageId(latest.screenshotId!)}>Enlarge<RiArrowRightUpLine size={13}/></button>}</div>
+              {runs.slice(0, 3).map(r => <div className="action-receipt" key={r.id}><div className="recent-action"><span>{label(r)}</span><small className={`state-badge ${r.status}`}>{r.status === "approval" ? "Needs approval" : r.status}</small></div>{["failed", "denied"].includes(r.status) && <p>{r.reason}</p>}</div>)}
+              <button className="text-link" onClick={() => setTab("Audit log")}>View audit log <RiArrowRightUpLine size={13}/></button>
+            </section>}
+              </div>
+              <div className="task-grid-side">
             {pending.length > 0 && <section id="task-approvals" className="context-section approvals" aria-label="Your approval is required">{pending.map(r => {
               const before = runs.find(previous => previous.workerId === r.workerId && previous.screenshotId && previous.createdAt < r.createdAt)
               return <div key={r.id} className="approval-card sy-approve"><span className="sy-approve__icon"><PauseIcon/></span><span className="sy-approve__title">Your turn</span><span className="sy-approve__sub">{beforeI(r)}</span>
@@ -123,17 +141,25 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
                 <p className="approval-wide">{r.action.kind === "click" ? `Click at (${r.action.x}, ${r.action.y}) in the browser shown above.` : r.action.kind === "press" ? `Press ${r.action.key}.` : r.reason} Sisyphus has proposed this action. It has not run yet.</p>{r.action.kind === "type" && <pre className="approval-wide">{r.action.text}</pre>}
                 <div className="sy-approve__actions"><button className="sy-btn sy-btn--pill sy-btn--gold" disabled={!!busy} onClick={() => void review(r, true)}>Approve & continue</button><button className="sy-btn sy-btn--pill sy-btn--outline" disabled={!!busy} onClick={() => void review(r, false)}>Decline</button></div></div>
             })}</section>}
-            {boundSessionId && <section className="context-section browser-section"><div className="context-section-heading"><span className="eyebrow">Sisyphus’s browser</span><RiComputerLine size={16}/></div><div className="browser-card sy-window"><div className="sy-window__bar"><i/><i/><i/><small>{pageHost}</small></div>{onIdentityProvider && <div className="identity-scan-prompt" role="status"><span className="sy-check"><RiQrCodeLine aria-hidden="true"/></span><span><strong>Scan this code with your FreeID app</strong><small>Waiting for you</small></span></div>}{latest?.screenshotId ? <button className="browser-screenshot" onClick={() => setImageId(latest.screenshotId!)} aria-label="Enlarge browser screenshot"><Image unoptimized width={1280} height={800} src={`/api/screenshots/${latest.screenshotId}`} alt="Latest screenshot from this task’s browser"/></button> : <div className="browser-empty"><RiComputerLine size={28}/><p>Waiting for Sisyphus to open the website</p></div>}</div>
-              <div className="browser-footer"><span>{latest ? `Captured ${time(latest.createdAt)}` : "Screenshots appear as Sisyphus works"}</span>{latest && <button onClick={() => setImageId(latest.screenshotId!)}>Enlarge<RiArrowRightUpLine size={13}/></button>}</div>
-              {runs.slice(0, 3).map(r => <div className="action-receipt" key={r.id}><div className="recent-action"><span>{label(r)}</span><small className={`state-badge ${r.status}`}>{r.status === "approval" ? "Needs approval" : r.status}</small></div>{["failed", "denied"].includes(r.status) && <p>{r.reason}</p>}</div>)}
-              <button className="text-link" onClick={() => setTab("Audit log")}>View audit log <RiArrowRightUpLine size={13}/></button>
-            </section>}
             {mandate && boundSessionId && <section className="context-section"><span className="eyebrow">Permissions for this task</span><div className="mandate-details"><div className="mandate-state"><span className={`state-badge ${active(mandate) ? "completed" : "denied"}`}>{active(mandate) ? "Access active" : "Access ended"}</span><small>{mandate.maxActions - mandate.usedActions} actions left</small></div><dl><div><dt>Website</dt><dd>{new URL(mandate.origin).hostname}</dd></div><div><dt>Interactions</dt><dd>{mandate.requireApproval ? "Ask you first" : "Allowed within this task"}</dd></div><div><dt>Access expires</dt><dd>{new Date(mandate.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</dd></div></dl>{active(mandate) && <button className="revoke-button" disabled={!!busy} onClick={async () => { if (await mutate(`mandates/${mandate.id}/revoke`)) setNotice("Access stopped. Sisyphus can no longer use the browser for this task.") }}>Stop browser access</button>}</div></section>}
             <div className="context-bottom"><RiShieldCheckLine size={14}/><p>{runtimeReady ? "Signed in with Free Identity. Sisyphus’s browser is limited to the permissions you grant." : "The AI or browser connection is unavailable."}</p></div>
-          </aside>
+              </div>
+              </div>
+            </div></>}
+            {tab === "Architecture" && <Architecture/>}
+            {tab === "Audit log" && <div className="activity-view"><div className="section-title"><div><span className="eyebrow">Audit log</span><h2>What happened, and why.</h2><p>Permissions, proposed actions, your approvals, and browser results.</p></div><a href="/api/audit/export" download className="export-link"><RiDownload2Line size={15}/>Export all</a></div>
+              {boundSessionId && <div className="audit-filter"><button className={!allAudit ? "selected" : ""} onClick={() => setAuditScope("task")}>This task</button><button className={allAudit ? "selected" : ""} onClick={() => setAuditScope("all")}>All tasks</button></div>}
+              <div className="audit-list">{audit.length === 0 ? <div className="empty-state"><RiFileList3Line size={30}/><h3>No actions recorded yet.</h3><p>Start a task to see Sisyphus’s work and the decisions behind it.</p></div> : audit.map(a => <article key={a.id}>{a.event.includes("deny") || a.event.includes("failed") || a.event.includes("rejected") || a.event.includes("revoked") ? <span className="audit-symbol denied" aria-hidden="true"/> : <span className="audit-symbol"><Check/></span>}<div><strong>{auditLabel(a)}</strong><p>{a.detail}</p>{a.typedText !== undefined && <div className="audit-typed-text"><span>Text entered</span><pre>{a.typedText}</pre></div>}<details className="audit-detail"><summary>Technical details</summary><small>{a.actionDetail && <>{a.actionDetail}<br/></>}{a.event} · {a.actor}<br/>Event: {a.id}{a.runId && <><br/>Action: {a.runId}</>}</small></details></div><time dateTime={a.at} title={new Date(a.at).toLocaleString()}>{time(a.at)}</time></article>)}</div>
+            </div>}
+          </section>
         </div>}
       </main>
     </div>
+    {loaded && <aside className={chatOpen ? "chat-dock" : "chat-dock minimised"} style={{ width: chatOpen ? `min(${chatWidth}px, calc(100vw - 2rem))` : undefined }} aria-label="Conversation with Sisyphus">
+      {chatOpen && <button type="button" className="chat-dock-grip" aria-label="Resize conversation" title="Drag to resize conversation" onPointerDown={startChatResize} onKeyDown={e => { if (e.key === "ArrowLeft") resizeChat(chatWidth + 24); if (e.key === "ArrowRight") resizeChat(chatWidth - 24) }}><RiDraggable size={12} aria-hidden="true"/></button>}
+      <header className="chat-dock-head"><span className="brand-ball" aria-hidden="true"/><strong>Sisyphus</strong>{pending.length > 0 && <span className="nav-count">{pending.length}</span>}<Button variant="ghost" size="icon-sm" aria-label={chatOpen ? "Minimise conversation" : "Open conversation"} onClick={() => setChatOpen(open => !open)}>{chatOpen ? <RiSubtractLine/> : <RiExpandUpDownLine/>}</Button></header>
+      <div className="chat-dock-body" hidden={!chatOpen}><AgentChat snapshot={snapshot} mandateId={mandateId} sessionId={sessionId} onSession={setBoundSessionId} onCreatePermissions={createPermissions} continuation={continuation}/></div>
+    </aside>}
     <Dialog open={!!imageId} onOpenChange={open => { if (!open) setImageId(null) }}><DialogContent className="screenshot-dialog"><DialogHeader><DialogTitle>Sisyphus’s browser</DialogTitle><DialogDescription>A captured screenshot from this task, not an interactive browser.</DialogDescription></DialogHeader>{imageId && <Image unoptimized width={1280} height={800} src={`/api/screenshots/${imageId}`} alt="Full browser screenshot"/>}</DialogContent></Dialog>
   </div>
 }
