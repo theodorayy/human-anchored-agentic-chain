@@ -17,15 +17,20 @@ type Props = {
   onSession: (id: string) => void;
   onCreatePermissions: (input: TaskPermissions) => Promise<Mandate | null>;
   continuation?: Continuation;
+  onStalled?: () => void;
 }
+// Survives remounts, so reconnecting the chat never resends an approval continuation.
+const consumedContinuations = new Set<string>()
+// A turn can finish on the server while a proxy holds the last stream bytes. With no new
+// events for this long, the parent remounts the chat; resuming replays to the turn boundary.
+const STALL_MS = 15_000
 
-export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation }: Props) {
+export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation, onStalled }: Props) {
   const [message, setMessage] = useState("")
   const [confirmTask, setConfirmTask] = useState("")
   const [starting, setStarting] = useState(false)
   const [sendError, setSendError] = useState("")
   const credentials = useRef({ mandateId, title: "" })
-  const consumedContinuation = useRef<string | undefined>(undefined)
   const end = useRef<HTMLDivElement>(null)
   const agent = useEveAgent({
     ...(sessionId ? { initialSession: { sessionId, streamIndex: 0 }, resume: true } : {}),
@@ -46,10 +51,15 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       if (!sessionId) window.history.replaceState(null, "", `/s/${agent.session.sessionId}`)
     }
   }, [agent.session?.sessionId, sessionId, onSession])
+  useEffect(() => {
+    if (agent.status !== "streaming" || !currentSession || !onStalled) return
+    const timer = window.setTimeout(onStalled, STALL_MS)
+    return () => window.clearTimeout(timer)
+  }, [agent.status, agent.data.messages, currentSession, onStalled])
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }) }, [agent.data.messages, agent.status])
   useEffect(() => {
-    if (!continuation || consumedContinuation.current === continuation.id || busy || !currentSession || !connected) return
-    consumedContinuation.current = continuation.id
+    if (!continuation || consumedContinuations.has(continuation.id) || busy || !currentSession || !connected) return
+    consumedContinuations.add(continuation.id)
     void agent.send(continuation.message).catch(() => { setMessage(continuation.message) })
   }, [continuation, busy, currentSession, connected, agent])
 

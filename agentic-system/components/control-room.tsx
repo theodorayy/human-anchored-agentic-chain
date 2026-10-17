@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useTheme } from "next-themes"
@@ -24,6 +24,8 @@ const auditLabel = (a: AuditEvent) => ({ "mandate.created": "You granted permiss
 export function ControlRoom({ sessionId }: { sessionId?: string }) {
   const [boundSessionId, setBoundSessionId] = useState(sessionId)
   const [chatOpen, setChatOpen] = useState(true)
+  const [chatGeneration, setChatGeneration] = useState(0)
+  const reconnectChat = useCallback(() => setChatGeneration(n => n + 1), [])
   // The dock renders only after the snapshot loads, so reading storage here cannot cause a hydration mismatch.
   const [chatWidth, setChatWidth] = useState(() => typeof window === "undefined" ? 440 : Math.max(360, Number(window.localStorage.getItem("sisyphus.chat-width")) || 440))
   const resizeChat = useCallback((width: number) => {
@@ -108,7 +110,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
   const allAudit = auditScope === "all" || !boundSessionId
   const audit = allAudit ? snapshot.audit : snapshot.audit.filter(a => a.runId ? runIds.has(a.runId) : a.mandateId === mandateId || (a.event === "session.started" && a.detail.includes(boundSessionId!)))
   const runtimeReady = snapshot.runtimeAvailable !== false && snapshot.eveAvailable
-  return <div className="control-room" style={{ "--chat-space": loaded && chatOpen ? `min(${chatWidth}px, calc(100vw - 2rem))` : "0px" } as CSSProperties}>
+  return <div className="control-room">
     <aside className="sidebar">
       <Link href="/workspace" className="brand"><span className="brand-ball" aria-hidden="true"/><span><span className="brand-name">Sisyphus</span><span className="brand-caption">Browser workspace</span></span></Link>
       <a href="/workspace" className="new-session" aria-label="New task"><RiAddLine size={17}/> New task <span>↗</span></a>
@@ -152,7 +154,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
     {loaded && <aside className={chatOpen ? "chat-dock" : "chat-dock minimised"} style={{ width: chatOpen ? `min(${chatWidth}px, calc(100vw - 2rem))` : undefined }} aria-label="Conversation with Sisyphus">
       {chatOpen && <button type="button" className="chat-dock-grip" aria-label="Resize conversation" title="Drag to resize conversation" onPointerDown={startChatResize} onKeyDown={e => { if (e.key === "ArrowLeft") resizeChat(chatWidth + 24); if (e.key === "ArrowRight") resizeChat(chatWidth - 24) }}><RiDraggable size={12} aria-hidden="true"/></button>}
       <header className="chat-dock-head"><span className="brand-ball" aria-hidden="true"/><strong>Sisyphus</strong>{pending.length > 0 && <span className="nav-count">{pending.length}</span>}<Button variant="ghost" size="icon-sm" aria-label={chatOpen ? "Minimise conversation" : "Open conversation"} onClick={() => setChatOpen(open => !open)}>{chatOpen ? <RiSubtractLine/> : <RiExpandUpDownLine/>}</Button></header>
-      <div className="chat-dock-body" hidden={!chatOpen}><AgentChat snapshot={snapshot} mandateId={mandateId} sessionId={sessionId} onSession={setBoundSessionId} onCreatePermissions={createPermissions} continuation={continuation}/></div>
+      <div className="chat-dock-body" hidden={!chatOpen}><AgentChat key={chatGeneration} snapshot={snapshot} mandateId={mandateId} sessionId={chatGeneration > 0 ? boundSessionId : sessionId} onSession={setBoundSessionId} onStalled={reconnectChat} onCreatePermissions={createPermissions} continuation={continuation}/></div>
     </aside>}
     <Dialog open={!!imageId} onOpenChange={open => { if (!open) setImageId(null) }}><DialogContent className="screenshot-dialog"><DialogHeader><DialogTitle>Sisyphus’s browser</DialogTitle><DialogDescription>A captured screenshot from this task, not an interactive browser.</DialogDescription></DialogHeader>{imageId && <Image unoptimized width={1280} height={800} src={`/api/screenshots/${imageId}`} alt="Full browser screenshot"/>}</DialogContent></Dialog>
   </div>
