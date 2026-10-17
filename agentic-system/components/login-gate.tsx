@@ -55,8 +55,8 @@ export function LoginGate({
             }}
           >
             {busy
-              ? "Connecting to Free Identity…"
-              : "Sign in with Free Identity"}
+              ? "Connecting to FreeID…"
+              : "Sign in with FreeID"}
             <RiArrowRightLine aria-hidden="true" />
           </Button>
           {!available && (
@@ -109,7 +109,7 @@ export function LoginGate({
           </p>
         </div>
         <footer className="login-footer">
-          <span>Powered by Free Identity</span>
+          <span>Powered by FreeID</span>
           <span>Eve runtime</span>
         </footer>
       </section>

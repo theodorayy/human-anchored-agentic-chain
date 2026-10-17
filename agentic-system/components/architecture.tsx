@@ -4,7 +4,7 @@ import { useState } from "react"
 import { RiUser3Line, RiSparkling2Line, RiShieldCheckLine, RiGitBranchLine, RiComputerLine, RiDatabase2Line, RiGlobalLine, RiCpuLine, RiKey2Line } from "@remixicon/react"
 
 const nodes = [
-  { id: "principal", title: "Human Principal", sub: "Free Identity", x: 40, y: 3, icon: RiUser3Line, detail: "The human signs in through FreeID and explicitly grants a mandate. In this first version the Principal acts in a personal capacity." },
+  { id: "principal", title: "Human Principal", sub: "FreeID", x: 40, y: 3, icon: RiUser3Line, detail: "The human signs in through FreeID and explicitly grants a mandate. In this first version the Principal acts in a personal capacity." },
   { id: "root", title: "Root agent", sub: "Eve · durable context", x: 40, y: 23, icon: RiSparkling2Line, detail: "Owns the goal and durable conversation. Plans and delegates bounded work to the browser worker. It cannot grant itself authority." },
   { id: "governance", title: "Governance", sub: "Mandates + policy", x: 8, y: 46, icon: RiShieldCheckLine, detail: "Stores human mandates and signed delegation records. A deterministic policy function checks origin, expiry, revocation, action limits and approval requirements." },
   { id: "control", title: "Control plane", sub: "Authorize · dispatch", x: 40, y: 46, icon: RiGitBranchLine, detail: "Non-agentic execution gate. Validates the authority chain, reserves an action slot atomically, requests approval when needed, and dispatches only permitted browser operations." },
