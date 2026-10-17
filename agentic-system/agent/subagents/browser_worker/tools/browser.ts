@@ -13,7 +13,9 @@ export default defineTool({
     const binding = transaction(state => state.eveSessions.find(s => s.id === rootId))
     if (!binding) throw new Error("No human mandate is bound to this delegation.")
     const principal = { id: binding.principalId, name: "Principal", provider: "oidc" as const }
-    const run = delegateBrowser(principal, binding.mandateId, input, ctx.session.id, "eve", `${ctx.session.id}:${ctx.callId}`, rootId, input.purpose)
+    // One browser per task, not per worker session: a fresh worker continues the same page
+    // instead of reopening the site and losing what was entered.
+    const run = delegateBrowser(principal, binding.mandateId, input, `task:${rootId}`, "eve", `${ctx.session.id}:${ctx.callId}`, rootId, input.purpose)
     const result = await dispatchBrowser(run)
     return { id: result.id, status: result.status, reason: result.reason, pageUrl: result.pageUrl,
       observation: result.observation, screenshotBase64: result.screenshotBase64 }
