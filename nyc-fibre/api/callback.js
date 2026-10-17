@@ -58,6 +58,7 @@ function releaseSummary({ fields, verification }) {
       passive_authentication: verification?.passive_authentication === true,
       csca_chain: verification?.csca_chain === true,
       app_attest: verification?.app_attest === true,
+      face_match: verification?.face_match === 'matched',
     },
   }
 }

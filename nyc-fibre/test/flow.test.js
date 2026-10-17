@@ -160,7 +160,7 @@ test('a verified release reaches the page once through /api/result, without any 
   const body = JSON.parse(first.body)
   assert.deepEqual(body, {
     received: ['given_name', 'family_name', 'birthdate', 'nationality', 'passport_expiry', 'document_number_masked'],
-    checks: { passive_authentication: true, csca_chain: true, app_attest: true },
+    checks: { passive_authentication: true, csca_chain: true, app_attest: true, face_match: false },
   })
   assert.match(setCookies(first)[0], /^nyf_result=; Path=\/api\/result; .*Max-Age=0/)
 

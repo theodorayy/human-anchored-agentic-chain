@@ -528,6 +528,9 @@
     if (passed.passive_authentication === true && passed.csca_chain === true) {
       checks.push(['Passport chip checked', 'The chip data was signed by the issuing country, and its certificate chained to a trusted country signing authority (CSCA).'])
     }
+    if (passed.face_match === true) {
+      checks.push(['Holder matched', 'Face matched to the passport photo on the holder\'s phone. We never see the photo.'])
+    }
     if (passed.app_attest === true) {
       checks.push(['Genuine FreeID app', 'Apple App Attest confirmed an unmodified app on a real device.'])
     }
