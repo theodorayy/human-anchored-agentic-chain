@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useTheme } from "next-themes"
-import { RiAddLine, RiArrowRightUpLine, RiChat3Line, RiCloseLine, RiComputerLine, RiFileList3Line, RiGitBranchLine, RiLoader4Line, RiLogoutBoxRLine, RiMoonLine, RiQrCodeLine, RiShieldCheckLine, RiSunLine, RiUser3Line, RiDownload2Line } from "@remixicon/react"
+import { RiAddLine, RiArrowRightUpLine, RiChat3Line, RiCloseLine, RiComputerLine, RiFileList3Line, RiGitBranchLine, RiLoader4Line, RiLogoutBoxRLine, RiMoonLine, RiQrCodeLine, RiShieldCheckLine, RiSunLine, RiUser3Line, RiDownload2Line, RiDeleteBinLine } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { AgentChat, type Continuation, type TaskPermissions } from "./agent-chat"
@@ -60,6 +60,11 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
     } catch (e) { setError(e instanceof Error ? e.message : "Request failed."); return null }
     finally { setBusy("") }
   }
+  async function deleteTasks(ids: string[], question: string) {
+    if (!window.confirm(question)) return
+    for (const id of ids) await mutate(`tasks/${encodeURIComponent(id)}/delete`)
+    if (boundSessionId && ids.includes(boundSessionId)) window.location.href = "/workspace"
+  }
   async function createPermissions(input: TaskPermissions): Promise<Mandate | null> {
     const result = await mutate("mandates", input)
     if (result) setMandateId(result.id)
@@ -93,7 +98,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
       <Link href="/workspace" className="brand"><span className="brand-ball" aria-hidden="true"/><span><span className="brand-name">Sisyphus</span><span className="brand-caption">Browser workspace</span></span></Link>
       <a href="/workspace" className="new-session" aria-label="New task"><RiAddLine size={17}/> New task <span>↗</span></a>
       <nav>{[{ text: "Task", icon: RiChat3Line }, { text: "Audit log", icon: RiFileList3Line }, { text: "Architecture", icon: RiGitBranchLine }].map(n => <button key={n.text} aria-label={n.text} title={n.text} className={tab === n.text ? "nav-item active" : "nav-item"} onClick={() => setTab(n.text)}><n.icon size={18}/>{n.text}{n.text === "Task" && pending.length > 0 && <span className="nav-count">{pending.length}</span>}</button>)}</nav>
-      <div className="recent-sessions"><span className="nav-label">Recent tasks</span>{snapshot.sessions.length === 0 ? <p>Your tasks will appear here.</p> : snapshot.sessions.slice(-6).reverse().map((s, i) => <a key={s.id} href={`/s/${s.id}`} title={s.title || `Task ${snapshot.sessions.length - i}`} className={s.id === boundSessionId ? "session-link chosen" : "session-link"}><RiChat3Line size={14}/><span>{s.title || `Task ${snapshot.sessions.length - i}`}</span></a>)}</div>
+      <div className="recent-sessions"><div className="recent-sessions-head"><span className="nav-label">Recent tasks</span>{snapshot.sessions.length > 0 && <button className="session-clear" disabled={!!busy} onClick={() => deleteTasks(snapshot.sessions.map(s => s.id), "Delete all tasks? Sisyphus loses browser access for each one. The audit log is kept.")}>Delete all</button>}</div>{snapshot.sessions.length === 0 ? <p>Your tasks will appear here.</p> : snapshot.sessions.slice(-6).reverse().map((s, i) => <div key={s.id} className="session-row"><a href={`/s/${s.id}`} title={s.title || `Task ${snapshot.sessions.length - i}`} className={s.id === boundSessionId ? "session-link chosen" : "session-link"}><RiChat3Line size={14}/><span>{s.title || `Task ${snapshot.sessions.length - i}`}</span></a><button className="session-delete" aria-label={`Delete ${s.title || "task"}`} title="Delete task" disabled={!!busy} onClick={() => deleteTasks([s.id], "Delete this task? Sisyphus loses browser access for it. The audit log is kept.")}><RiDeleteBinLine size={14}/></button></div>)}</div>
       <div className="sidebar-bottom"><div className="profile"><span className="avatar"><RiUser3Line size={18}/></span><div><strong>{snapshot.principal?.name || "Your workspace"}</strong><small>Signed in with Free Identity</small></div><Button variant="ghost" size="icon-sm" aria-label="Sign out" onClick={async () => { await mutate("auth/logout"); window.location.assign("/") }}><RiLogoutBoxRLine/></Button></div></div>
     </aside>
     <div className="workspace">

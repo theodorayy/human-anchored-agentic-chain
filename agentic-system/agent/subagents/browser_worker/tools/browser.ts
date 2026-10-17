@@ -5,7 +5,7 @@ import { delegateBrowser, dispatchBrowser } from "../../../../lib/hac/control-pl
 import { transaction } from "../../../../lib/hac/store"
 
 export default defineTool({
-  description: "Perform one browser action within the human mandate. Inspect returned screenshot pixels to choose coordinates. Approval and denials are enforced outside the model.",
+  description: "Perform one browser action within the human mandate. Inspect returned screenshot pixels to choose coordinates. Approval and denials are enforced outside the model. Navigate only to the authorised URL you were given; never guess a domain.",
   inputSchema: browserAction.and(z.object({ purpose: z.string().min(1).max(200).describe("Explain the specific UI control and why this action is needed, in plain language for the human approving it.") })),
   async execute(input, ctx) {
     const rootId = ctx.session.parent?.rootSessionId

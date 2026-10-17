@@ -381,3 +381,13 @@
 
 /* The check badge always centres its tick, whatever layout rules its parent applies to spans. */
 span.sy-check { display: inline-grid; place-items: center; }
+
+.recent-sessions-head { display: flex; align-items: center; justify-content: space-between; }
+.session-clear { background: none; border: 0; padding: 0; color: var(--ink-muted); font: 400 12px/16px var(--font-sans); cursor: pointer; }
+.session-clear:hover { color: var(--ink); text-decoration: underline; }
+.session-row { position: relative; display: flex; align-items: center; }
+.session-row .session-link { flex: 1; min-width: 0; padding-right: 32px; }
+.session-row .session-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-delete { position: absolute; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: var(--radius-md); background: none; color: var(--ink-muted); cursor: pointer; opacity: 0; }
+.session-row:hover .session-delete, .session-delete:focus-visible { opacity: 1; }
+.session-delete:hover { background: var(--surface); color: var(--ink); }

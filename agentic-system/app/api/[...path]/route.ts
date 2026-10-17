@@ -2,7 +2,7 @@ import { z, ZodError } from "zod"
 import { readFile } from "node:fs/promises"
 import { requirePrincipal, requireSameOrigin, demoSession, logout, demoAvailable, oidcAvailable, eveAvailable, appUrl, cookieHeader } from "@/lib/hac/auth"
 import { beginLogin, finishLogin } from "@/lib/hac/oidc"
-import { createMandate, revokeMandate, delegateBrowser, dispatchBrowser, reviewRun, HttpError } from "@/lib/hac/control-plane"
+import { createMandate, revokeMandate, deleteTask, delegateBrowser, dispatchBrowser, reviewRun, HttpError } from "@/lib/hac/control-plane"
 import { targetUrl, identityProviderOrigins } from "@/lib/hac/policy"
 import { transaction } from "@/lib/hac/store"
 import { auditForPrincipal } from "@/lib/hac/audit"
@@ -68,6 +68,12 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
         const mandate = revokeMandate(principal, revoke[1])
         await closeMandateBrowsers(mandate.id)
         return publicJson(mandate)
+      }
+      const removal = path.match(/^tasks\/([^/]+)\/delete$/)
+      if (removal) {
+        const removed = deleteTask(principal, decodeURIComponent(removal[1]))
+        await closeMandateBrowsers(removed.mandateId)
+        return publicJson(removed)
       }
       if (path === "browser/preview") {
         const { mandateId, url } = z.object({ mandateId: z.string().uuid(), url: z.url() }).parse(await request.json())

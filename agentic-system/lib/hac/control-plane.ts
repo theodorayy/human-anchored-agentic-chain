@@ -41,6 +41,22 @@ export function revokeMandate(principal: Principal, id: string) {
     return m
   })
 }
+export function deleteTask(principal: Principal, sessionId: string) {
+  return transaction(state => {
+    const index = state.eveSessions.findIndex(s => s.id === sessionId && s.principalId === principal.id)
+    if (index < 0) throw new HttpError(404, "Task not found.")
+    const [session] = state.eveSessions.splice(index, 1)
+    const m = state.mandates.find(x => x.id === session.mandateId && x.principalId === principal.id)
+    if (m && !m.revokedAt) {
+      m.revokedAt = new Date().toISOString()
+      for (const run of state.runs.filter(r => r.mandateId === m.id && ["approval", "queued"].includes(r.status))) {
+        run.status = "denied"; run.reason = "The task was deleted."
+      }
+    }
+    audit(state, { principalId: principal.id, mandateId: session.mandateId, actor: "Principal", event: "task.deleted", detail: "Task deleted. Its browser access ended; its audit record is kept." })
+    return { id: session.id, mandateId: session.mandateId }
+  })
+}
 export function delegateBrowser(principal: Principal, mandateId: string, input: unknown, workerId: string, mode: Run["mode"], id: string = randomUUID(), rootSessionId?: string, summary?: string) {
   const action = browserAction.parse(input)
   return transaction(state => {

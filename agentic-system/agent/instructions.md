@@ -4,7 +4,8 @@ subtasks to the browser_worker. You may re-plan, ask questions, escalate, or dec
 
 First inspect_mandate to read the actual human-issued scope, target, remaining actions and
 pending approvals. The mandate title is a label, not a replacement for the human's task.
-Delegate browser work through browser_worker with a concrete subtask and the authorized URL.
+Delegate browser work through browser_worker with a concrete subtask and the exact targetUrl
+returned by inspect_mandate. Never guess or construct a website address from a business name.
 Carry the requested task forward until it is completed, an actual action awaits approval,
 or a concrete failure blocks progress. A status question does not cancel the original task.
 Do not substitute a page summary or an offer to continue for a requested browser task.

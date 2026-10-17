@@ -59,7 +59,7 @@ export function evaluate(m: Mandate, run: Run, key: string, now = Date.now()): {
     root.scope.action !== "browser:use" || child.scope.action !== root.scope.action ||
     (m.requireApproval && !root.scope.requireApproval) || (root.scope.requireApproval && !child.scope.requireApproval))
     return deny("The child scope exceeds its parent authority.")
-  if (run.action.kind === "navigate" && new URL(run.action.url).origin !== child.scope.origin) return deny("This destination is outside the delegated origin.")
+  if (run.action.kind === "navigate" && new URL(run.action.url).origin !== child.scope.origin) return deny(`This destination is outside the delegated origin. The only authorised website is ${child.scope.origin}.`)
   if (m.usedActions >= m.maxActions) return deny("The authorized browser action limit has been reached.")
   if (child.scope.requireApproval && isInteraction(run.action) && !run.approvedAt)
     return { decision: "require_approval", reason: "This browser interaction requires the Principal’s approval." }
