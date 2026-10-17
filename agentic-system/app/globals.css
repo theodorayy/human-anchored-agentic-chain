@@ -142,7 +142,7 @@
 .login-card > p { margin: 0; font: 400 14px/20px var(--font-sans); color: var(--ink-muted); }
 .login-card > .login-availability { font-size: 12px; line-height: 16px; color: var(--gold-strong); }
 .login-assurance { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--border); color: var(--ink); font: 400 14px/20px var(--font-sans); }
-.login-assurance span { display: flex; align-items: center; gap: var(--space-3); }
+.login-assurance > span { display: flex; align-items: center; gap: var(--space-3); }
 .login-note { margin: 0; text-align: left; font: 400 12px/16px var(--font-sans); color: var(--ink-muted); }
 .login-footer { display: flex; justify-content: space-between; gap: var(--space-4); color: var(--ink-muted); font: 400 12px/16px var(--font-sans); }
 @media (max-width: 900px) { .login-story, .login-entry { padding-left: var(--space-6); padding-right: var(--space-6); } .login-hill { width: calc(100% + 2 * var(--space-6)); margin: 0 calc(-1 * var(--space-6)); } }
@@ -378,3 +378,6 @@
 @media (max-width: 900px) { .sidebar { width: 68px; padding: var(--space-5) var(--space-2); align-items: center; } .brand { margin: 0 0 var(--space-5); } .brand > span:not(.brand-ball), .sidebar .nav-label, .recent-sessions, .profile > div { display: none; } .new-session { font-size: 0; padding: var(--space-3); } .new-session > span { display: none; } .sidebar nav { margin: 0; gap: var(--space-3); } .nav-item { font-size: 0; padding: var(--space-3); } .nav-item svg { flex-shrink: 0; } .nav-count { display: none; } .sidebar-bottom { width: 100%; } .profile { justify-content: center; } .sidebar .profile > .avatar { display: none; } .context-panel { width: 265px; } .breadcrumb strong { max-width: 170px; } }
 @media (max-width: 700px) { .control-room { height: auto; min-height: 100dvh; } .sidebar { position: fixed; height: 100dvh; z-index: 10; width: 58px; } .workspace { margin-left: 58px; } .topbar { height: 54px; padding: 0 var(--space-4); justify-content: flex-end; } .breadcrumb { display: none; } .workspace-body { flex-direction: column; } .primary-panel { overflow: visible; } .context-panel { width: 100%; border-left: 0; border-top: 1px solid var(--border); overflow: visible; padding: var(--space-5); } .chat-view { min-height: calc(100dvh - 108px); } .chat-welcome { padding: var(--space-6) var(--space-4); } .composer-wrap { padding: var(--space-3) var(--space-4) var(--space-5); } .architecture-view, .activity-view { padding: var(--space-5) var(--space-4); } .diagram-legend { margin-top: var(--space-3); } .messages { padding: var(--space-5) var(--space-4); } .audit-list time { display: none; } .task-status { padding: var(--space-3) var(--space-4); flex-wrap: wrap; } .task-status > div { flex: 1; } .approvals { scroll-margin-top: 20px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+
+/* The check badge always centres its tick, whatever layout rules its parent applies to spans. */
+span.sy-check { display: inline-grid; place-items: center; }
