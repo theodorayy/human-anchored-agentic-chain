@@ -1,12 +1,14 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
 import { useEveAgent } from "eve/react"
-import { RiArrowUpLine, RiStopFill, RiSparkling2Line, RiArrowRightUpLine, RiLoader4Line, RiShieldCheckLine, RiGlobalLine } from "@remixicon/react"
+import { RiArrowUpLine, RiStopFill, RiArrowRightUpLine, RiLoader4Line, RiShieldCheckLine, RiGlobalLine, RiHome4Line } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import type { Mandate, Snapshot } from "@/lib/hac/types"
+import { HillMark } from "./hill-mark"
+import { PauseIcon } from "./pause-icon"
 
 export type TaskPermissions = { title: string; maxActions: number; durationHours: number; requireApproval: boolean }
 export type Continuation = { id: string; message: string }
@@ -72,32 +74,32 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
   const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Eve automatically." : busy ? "Browser actions and their results appear in Task details and Audit log." : "Read Eve’s response below, or send a follow-up."
   return <div className="chat-view">
     {currentSession && <div className={`task-status ${awaitingApproval ? "needs-approval" : ""}`} role="status">
-      {busy && !awaitingApproval ? <RiLoader4Line size={18} className="animate-spin"/> : <RiShieldCheckLine size={18}/>}
+      {awaitingApproval ? <span className="sy-approve__icon"><PauseIcon/></span> : busy ? <RiLoader4Line size={18} className="animate-spin"/> : <RiShieldCheckLine size={18}/>}
       <div><strong>{status}</strong><p>{detail}</p></div>
-      {awaitingApproval && <a href="#task-approvals">Review action <RiArrowRightUpLine size={14}/></a>}
+      {awaitingApproval && <a href="#task-approvals" className="sy-btn sy-btn--pill sy-btn--gold">Review action <RiArrowRightUpLine size={14}/></a>}
     </div>}
     <div className="chat-scroll">
       {agent.data.messages.length === 0 ? <div className="chat-welcome">
-        <div className="hero-mark"><RiSparkling2Line size={31}/></div>
-        <span className="eyebrow">EVE · YOUR BROWSER AGENT</span>
-        <h1>What should Eve do?</h1>
+        <HillMark variant="mini" className="chat-hill"/>
+        <span className="eyebrow">Eve, your browser agent</span>
+        <h1>What should <b>Eve</b> do?</h1>
         <p>Tell Sisyphus what’s happening in your life.<br/>You’ll confirm its permissions before it starts.</p>
         <div className="task-steps"><span>1. Describe the task</span><span>2. Set permissions</span><span>3. Follow the work</span></div>
         <div className="suggestions">
-          {[{ title: "I’m moving to New York", text: "I’m moving to New York next month as an international student. What admin do I need to sort out?", icon: RiGlobalLine }, { title: "Set up home internet", text: "Set up home internet with NYC Fibre at 2 West Loop Road, Apt 14C, New York 10044. 1 Gig plan, email maria.santos@example.com, phone (212) 555-0142, earliest installation date. I don’t have an SSN.", icon: RiShieldCheckLine }].map(s => <button key={s.title} onClick={() => setMessage(s.text)}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
+          {[{ title: "I’m moving to New York", text: "I’m moving to New York next month as an international student. What admin do I need to sort out?", icon: RiGlobalLine }, { title: "Set up home internet", text: "Set up home internet with NYC Fibre at 2 West Loop Road, Apt 14C, New York 10044. 1 Gig plan, email maria.santos@example.com, phone (212) 555-0142, earliest installation date. I don’t have an SSN.", icon: RiHome4Line }].map(s => <button key={s.title} className="sy-card" onClick={() => setMessage(s.text)}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
         </div>
         <div className="welcome-target">Website <a href={snapshot.targetUrl} target="_blank" rel="noreferrer">NYC Fibre <RiArrowRightUpLine size={12}/></a></div>
       </div> : <div className="messages">{agent.data.messages.map(m => <article key={m.id} className={`message ${m.role}`}>
-        <div className="message-author">{m.role === "assistant" ? <><RiSparkling2Line size={15}/> Eve</> : "You"}</div>
+        <div className="message-author">{m.role === "assistant" ? <><i aria-hidden="true"/> Eve</> : "You"}</div>
         {m.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{part.text}</div> : part.type === "dynamic-tool" ? <details key={index} className="tool-event"><summary>{part.toolName === "browser_worker" ? "Browser task" : part.toolName === "inspect_mandate" ? "Permission check" : part.toolName.replaceAll("_", " ")}<small>{part.state === "output-available" ? "Response received" : part.state === "output-error" ? "Failed" : "In progress"}</small></summary><p>Individual browser actions and policy decisions are recorded in the Audit log.</p></details> : null)}
       </article>)}<div ref={end}/></div>}
     </div>
     <div className="composer-wrap">
       {(agent.error || sendError) && <div className="inline-error" role="alert">{agent.error?.message || sendError}</div>}
       {!connected && <p className="composer-notice">{snapshot.runtimeAvailable === false ? "The browser service is offline." : "The AI connection is unavailable. Try again once it is connected."}</p>}
-      <form className="composer" onSubmit={e => { e.preventDefault(); void send() }}>
+      <form className="composer sy-card" onSubmit={e => { e.preventDefault(); void send() }}>
         <textarea aria-label="Message Eve" placeholder={currentSession ? "Ask Eve a question or give a follow-up…" : "Describe the task you want Eve to complete…"} value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send() } }} rows={2}/>
-        <div className="composer-bottom"><span><RiSparkling2Line size={15}/> Eve</span>{busy ? <Button type="button" aria-label="Stop Eve" size="sm" onClick={() => void agent.cancel()}><RiStopFill/>Stop</Button> : <Button type="submit" aria-label={currentSession ? "Send message" : "Review permissions"} size="sm" disabled={!connected || !message.trim() || starting}>{currentSession ? <><RiArrowUpLine/>Send</> : <>Review permissions<RiArrowRightUpLine/></>}</Button>}</div>
+        <div className="composer-bottom"><span><i aria-hidden="true"/> Eve</span>{busy ? <Button type="button" aria-label="Stop Eve" size="sm" className="sy-btn sy-btn--primary" onClick={() => void agent.cancel()}><RiStopFill/>Stop</Button> : <Button type="submit" aria-label={currentSession ? "Send message" : "Review permissions"} size="sm" className="sy-btn sy-btn--primary" disabled={!connected || !message.trim() || starting}>{currentSession ? <><RiArrowUpLine/>Send</> : <>Review permissions<RiArrowRightUpLine/></>}</Button>}</div>
       </form>
       <p className="composer-footnote">{currentSession ? "Eve can act only within the permissions you granted." : "Nothing runs until you confirm the task and permissions."}</p>
     </div>
@@ -111,7 +113,7 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
         </fieldset>
         <div className="form-pair"><div><Label htmlFor="task-action-limit">Maximum browser actions</Label><Input id="task-action-limit" name="maxActions" type="number" min={1} max={200} defaultValue={100} required/></div><div><Label htmlFor="task-duration">Access lasts (hours)</Label><Input id="task-duration" name="durationHours" type="number" min={1} max={24} defaultValue={1} required/></div></div>
         {sendError && <p className="inline-error" role="alert">{sendError}</p>}
-        <Button type="submit" disabled={starting}>{starting ? <RiLoader4Line className="animate-spin"/> : <RiShieldCheckLine/>}{starting ? "Starting…" : "Confirm & start task"}</Button>
+        <Button type="submit" className="sy-btn sy-btn--primary sy-btn--block" disabled={starting}>{starting ? <RiLoader4Line className="animate-spin"/> : <RiShieldCheckLine/>}{starting ? "Starting…" : "Confirm & start task"}</Button>
       </form>
     </DialogContent></Dialog>
   </div>

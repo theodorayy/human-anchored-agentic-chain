@@ -17,20 +17,20 @@ export function Architecture() {
   const [selected, setSelected] = useState("control")
   const current = nodes.find(n => n.id === selected)!
   return <div className="architecture-view">
-    <div className="section-title"><div><span className="eyebrow">THE EXECUTION MODEL</span><h2>Every action has a human origin.</h2><p>The browser-use branch of your HAC architecture.</p></div><span className="small-tag">Interactive map</span></div>
+    <div className="section-title"><div><span className="eyebrow">The execution model</span><h2>Every action has a human origin.</h2><p>The browser-use branch of your HAC architecture.</p></div><span className="small-tag">Interactive map</span></div>
     <div className="diagram-scroll"><div className="diagram">
       <svg viewBox="0 0 900 520" aria-hidden="true" className="diagram-lines">
-        <defs>{[["ops", "#6290ad"], ["policy", "#458872"], ["audit", "#c97e6b"]].map(([id, color]) => <marker key={id} id={id} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M1,1 L7,4 L1,7" fill="none" stroke={color} strokeWidth="1.4" /></marker>)}</defs>
-        <path d="M30 100H875 M30 350H875" stroke="#a9c3b8" strokeDasharray="3 7" fill="none" />
-        <g fill="none" stroke="#6290ad" strokeWidth="1.6" markerEnd="url(#ops)"><path d="M450 75V119"/><path d="M450 178V240"/><path d="M450 295V375"/><path d="M540 152H610V405H541"/><path d="M540 407H646"/><path d="M250 407H359"/></g>
-        <path d="M250 272H359" stroke="#458872" strokeWidth="1.6" markerEnd="url(#policy)" fill="none" />
-        <path d="M540 272H646 M540 430H600V297H646" stroke="#c97e6b" strokeWidth="1.6" markerEnd="url(#audit)" fill="none" />
-        <text x="623" y="201">scoped delegation</text><text x="40" y="94">PRINCIPAL</text><text x="40" y="344">EFFECTORS</text>
+        <defs>{[["ops", "sy-s-ink"], ["policy", "sy-s-gold"], ["audit", "diagram-audit"]].map(([id, line]) => <marker key={id} id={id} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M1,1 L7,4 L1,7" className={line} strokeWidth="1.4" /></marker>)}</defs>
+        <path d="M30 100H875 M30 350H875" className="diagram-boundary" strokeDasharray="3 7" />
+        <g className="sy-s-ink" strokeWidth="1.6" markerEnd="url(#ops)"><path d="M450 75V119"/><path d="M450 178V240"/><path d="M450 295V375"/><path d="M540 152H610V405H541"/><path d="M540 407H646"/><path d="M250 407H359"/></g>
+        <path d="M250 272H359" className="sy-s-gold" strokeWidth="1.6" markerEnd="url(#policy)" />
+        <path d="M540 272H646 M540 430H600V297H646" className="diagram-audit" strokeWidth="1.6" markerEnd="url(#audit)" />
+        <text x="623" y="201">scoped delegation</text><text x="40" y="94">Principal</text><text x="40" y="344">Effectors</text>
       </svg>
       {nodes.map(n => <button key={n.id} style={{ left: `${n.x}%`, top: `${n.y}%` }} onClick={() => setSelected(n.id)} className={`diagram-node ${selected === n.id ? "selected" : ""} ${["model", "target"].includes(n.id) ? "external" : ""}`}><n.icon size={18}/><strong>{n.title}</strong><small>{n.sub}</small></button>)}
     </div></div>
     <div className="diagram-legend"><span><i className="line ops"/>Operational flow</span><span><i className="line policy"/>Policy decision</span><span><i className="line audit"/>Audit event</span><span><i className="line boundary"/>Trust boundary</span></div>
-    <div className="inspector"><current.icon size={22}/><div><h3>{current.title}</h3><p>{current.detail}</p></div></div>
+    <div className="inspector sy-card"><current.icon size={22}/><div><h3>{current.title}</h3><p>{current.detail}</p></div></div>
     <div className="architecture-note"><RiKey2Line size={18}/><p>Credentials stay with the control plane. General API effectors and full desktop computer use are future adapters; this implementation executes the browser branch.</p></div>
   </div>
 }

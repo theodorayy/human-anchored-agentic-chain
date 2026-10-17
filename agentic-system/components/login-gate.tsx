@@ -2,17 +2,10 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import {
-  RiArrowRightLine,
-  RiCheckLine,
-  RiGitBranchLine,
-  RiKey2Line,
-  RiLockLine,
-  RiShieldCheckLine,
-  RiSparkling2Line,
-  RiUser3Line,
-} from "@remixicon/react"
+import { RiArrowRightLine, RiLockLine } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
+import { Check } from "@/components/check"
+import { HillMark } from "@/components/hill-mark"
 
 export function LoginGate({
   available,
@@ -31,75 +24,40 @@ export function LoginGate({
     <main className="login-page">
       <section className="login-story">
         <Link href="/" className="login-brand">
-          <span className="brand-symbol">
-            <RiGitBranchLine size={24} />
-          </span>
-          <span>
-            Sisyphus <small>Life-admin assistant</small>
-          </span>
+          Sisyphus
         </Link>
         <div className="login-intro">
-          <div
-            className="login-chain"
-            aria-label="Human identity, scoped authority, agent execution"
-          >
-            <div>
-              <span>
-                <RiUser3Line size={21} />
-              </span>
-              <strong>You</strong>
-              <small>Verified identity</small>
-            </div>
-            <i />
-            <div>
-              <span>
-                <RiShieldCheckLine size={21} />
-              </span>
-              <strong>Your mandate</strong>
-              <small>Scoped authority</small>
-            </div>
-            <i />
-            <div>
-              <span>
-                <RiSparkling2Line size={21} />
-              </span>
-              <strong>Your agent</strong>
-              <small>Bounded execution</small>
-            </div>
-          </div>
+          <p className="eyebrow">Your life-admin assistant</p>
+          <h1 className="login-statement">
+            Let Sisyphus <b>save you some time.</b>
+          </h1>
+          <p className="login-lede">
+            It fills the forms with you and pauses for your approval.
+          </p>
         </div>
-        <p className="login-story-footer">
-          <RiGitBranchLine size={15} /> Human-anchored agentic chain{" "}
-          <span>01</span>
-        </p>
+        <HillMark className="login-hill" />
       </section>
       <section className="login-entry">
         <span className="login-private">
-          <RiLockLine size={13} /> PRIVATE WORKSPACE
+          <RiLockLine size={14} /> Private workspace
         </span>
-        <div className="login-card">
-          <span className="login-key">
-            <RiKey2Line size={25} />
-          </span>
+        <div className="login-card sy-card">
           <h2>Welcome to your workspace.</h2>
           <p>
-            Sign in to give your agent a goal.
-            <br />
-            Stay in control of every step.
+            Sign in to give your agent a goal. Stay in control of every step.
           </p>
           <Button
-            className="login-button"
+            className="sy-btn sy-btn--primary sy-btn--block"
             disabled={!available || busy}
             onClick={() => {
               setBusy(true)
               window.location.assign("/api/auth/login")
             }}
           >
-            <RiKey2Line />
             {busy
               ? "Connecting to Free Identity…"
               : "Sign in with Free Identity"}
-            <RiArrowRightLine />
+            <RiArrowRightLine aria-hidden="true" />
           </Button>
           {!available && (
             <p className="login-availability" role="status">
@@ -109,7 +67,7 @@ export function LoginGate({
           {demo && (
             <Button
               variant="outline"
-              className="w-full"
+              className="sy-btn sy-btn--outline sy-btn--block"
               disabled={busy}
               onClick={async () => {
                 setBusy(true)
@@ -135,24 +93,20 @@ export function LoginGate({
             </p>
           )}
           <div className="login-assurance">
-            <span>
-              <RiCheckLine size={16} /> Your identity, verified by FreeID
-            </span>
-            <span>
-              <RiCheckLine size={16} /> Authority granted explicitly by you
-            </span>
-            <span>
-              <RiCheckLine size={16} /> Agent actions checked before execution
-            </span>
+            {[
+              "Your identity, verified by FreeID",
+              "Authority granted explicitly by you",
+              "Agent actions checked before execution",
+            ].map((text) => (
+              <span key={text}>
+                <Check /> {text}
+              </span>
+            ))}
           </div>
-          <div className="login-note">
-            <RiShieldCheckLine size={18} />
-            <p>
-              Signing in establishes who you are.
-              <br />
-              Your agent acts only after you issue a mandate.
-            </p>
-          </div>
+          <p className="login-note">
+            Signing in establishes who you are. Your agent acts only after you
+            issue a mandate.
+          </p>
         </div>
         <footer className="login-footer">
           <span>Powered by Free Identity</span>
