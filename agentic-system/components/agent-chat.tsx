@@ -70,8 +70,8 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       await agent.send(task).catch(() => { setMessage(task) })
     } finally { setStarting(false) }
   }
-  const status = authorityEnded ? "Permissions ended" : awaitingApproval ? "Your approval is needed" : agent.error ? "Eve encountered a problem" : busy ? "Eve is working" : "Eve is waiting for you"
-  const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Eve automatically." : busy ? "Browser actions and their results appear in Task details and Audit log." : "Read Eve’s response below, or send a follow-up."
+  const status = authorityEnded ? "Permissions ended" : awaitingApproval ? "Your approval is needed" : agent.error ? "Sisyphus encountered a problem" : busy ? "Sisyphus is working" : "Sisyphus is waiting for you"
+  const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Sisyphus automatically." : busy ? "Browser actions and their results appear in Task details and Audit log." : "Read Sisyphus’s response below, or send a follow-up."
   return <div className="chat-view">
     {currentSession && <div className={`task-status ${awaitingApproval ? "needs-approval" : ""}`} role="status">
       {awaitingApproval ? <span className="sy-approve__icon"><PauseIcon/></span> : busy ? <RiLoader4Line size={18} className="animate-spin"/> : <RiShieldCheckLine size={18}/>}
@@ -81,8 +81,8 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
     <div className="chat-scroll">
       {agent.data.messages.length === 0 ? <div className="chat-welcome">
         <HillMark variant="mini" className="chat-hill"/>
-        <span className="eyebrow">Eve, your browser agent</span>
-        <h1>What should <b>Eve</b> do?</h1>
+        <span className="eyebrow">Sisyphus, your browser agent</span>
+        <h1>What should <b>Sisyphus</b> do?</h1>
         <p>Tell Sisyphus what’s happening in your life.<br/>You’ll confirm its permissions before it starts.</p>
         <div className="task-steps"><span>1. Describe the task</span><span>2. Set permissions</span><span>3. Follow the work</span></div>
         <div className="suggestions">
@@ -90,7 +90,7 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
         </div>
         <div className="welcome-target">Website <a href={snapshot.targetUrl} target="_blank" rel="noreferrer">NYC Fibre <RiArrowRightUpLine size={12}/></a></div>
       </div> : <div className="messages">{agent.data.messages.map(m => <article key={m.id} className={`message ${m.role}`}>
-        <div className="message-author">{m.role === "assistant" ? <><i aria-hidden="true"/> Eve</> : "You"}</div>
+        <div className="message-author">{m.role === "assistant" ? <><i aria-hidden="true"/> Sisyphus</> : "You"}</div>
         {m.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{part.text}</div> : part.type === "dynamic-tool" ? <details key={index} className="tool-event"><summary>{part.toolName === "browser_worker" ? "Browser task" : part.toolName === "inspect_mandate" ? "Permission check" : part.toolName.replaceAll("_", " ")}<small>{part.state === "output-available" ? "Response received" : part.state === "output-error" ? "Failed" : "In progress"}</small></summary><p>Individual browser actions and policy decisions are recorded in the Audit log.</p></details> : null)}
       </article>)}<div ref={end}/></div>}
     </div>
@@ -98,18 +98,18 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       {(agent.error || sendError) && <div className="inline-error" role="alert">{agent.error?.message || sendError}</div>}
       {!connected && <p className="composer-notice">{snapshot.runtimeAvailable === false ? "The browser service is offline." : "The AI connection is unavailable. Try again once it is connected."}</p>}
       <form className="composer sy-card" onSubmit={e => { e.preventDefault(); void send() }}>
-        <textarea aria-label="Message Eve" placeholder={currentSession ? "Ask Eve a question or give a follow-up…" : "Describe the task you want Eve to complete…"} value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send() } }} rows={2}/>
-        <div className="composer-bottom"><span><i aria-hidden="true"/> Eve</span>{busy ? <Button type="button" aria-label="Stop Eve" size="sm" className="sy-btn sy-btn--primary" onClick={() => void agent.cancel()}><RiStopFill/>Stop</Button> : <Button type="submit" aria-label={currentSession ? "Send message" : "Review permissions"} size="sm" className="sy-btn sy-btn--primary" disabled={!connected || !message.trim() || starting}>{currentSession ? <><RiArrowUpLine/>Send</> : <>Review permissions<RiArrowRightUpLine/></>}</Button>}</div>
+        <textarea aria-label="Message Sisyphus" placeholder={currentSession ? "Ask Sisyphus a question or give a follow-up…" : "Describe the task you want Sisyphus to complete…"} value={message} onChange={e => setMessage(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send() } }} rows={2}/>
+        <div className="composer-bottom"><span><i aria-hidden="true"/> Sisyphus</span>{busy ? <Button type="button" aria-label="Stop Sisyphus" size="sm" className="sy-btn sy-btn--primary" onClick={() => void agent.cancel()}><RiStopFill/>Stop</Button> : <Button type="submit" aria-label={currentSession ? "Send message" : "Review permissions"} size="sm" className="sy-btn sy-btn--primary" disabled={!connected || !message.trim() || starting}>{currentSession ? <><RiArrowUpLine/>Send</> : <>Review permissions<RiArrowRightUpLine/></>}</Button>}</div>
       </form>
-      <p className="composer-footnote">{currentSession ? "Eve can act only within the permissions you granted." : "Nothing runs until you confirm the task and permissions."}</p>
+      <p className="composer-footnote">{currentSession ? "Sisyphus can act only within the permissions you granted." : "Nothing runs until you confirm the task and permissions."}</p>
     </div>
     <Dialog open={!!confirmTask} onOpenChange={open => { if (!open && !starting) setConfirmTask("") }}><DialogContent><DialogHeader><DialogTitle>Confirm task & permissions</DialogTitle><DialogDescription>These permissions apply to this task. You can stop access at any time.</DialogDescription></DialogHeader>
       <form className="mandate-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); void startTask({ title: confirmTask.slice(0, 100), maxActions: Number(data.get("maxActions")), durationHours: Number(data.get("durationHours")), requireApproval: data.get("approval") === "ask" }) }}>
         <div className="task-confirmation"><Label>Task</Label><p>{confirmTask}</p></div>
         <div className="scope-preview"><RiGlobalLine size={16}/><span>{new URL(snapshot.targetUrl).hostname} only</span></div>
-        <fieldset className="permission-options"><legend>How much may Eve do?</legend>
-          <label><input type="radio" name="approval" value="ask" defaultChecked/><span><strong>Ask before each interaction</strong><small>Eve can open and read pages. You approve each click, text entry, and key press.</small></span></label>
-          <label><input type="radio" name="approval" value="allow"/><span><strong>Let Eve complete the task</strong><small>Allow clicks, typing, and submissions on this demo website without asking each time.</small></span></label>
+        <fieldset className="permission-options"><legend>How much may Sisyphus do?</legend>
+          <label><input type="radio" name="approval" value="ask" defaultChecked/><span><strong>Ask before each interaction</strong><small>Sisyphus can open and read pages. You approve each click, text entry, and key press.</small></span></label>
+          <label><input type="radio" name="approval" value="allow"/><span><strong>Let Sisyphus complete the task</strong><small>Allow clicks, typing, and submissions on this demo website without asking each time.</small></span></label>
         </fieldset>
         <div className="form-pair"><div><Label htmlFor="task-action-limit">Maximum browser actions</Label><Input id="task-action-limit" name="maxActions" type="number" min={1} max={200} defaultValue={100} required/></div><div><Label htmlFor="task-duration">Access lasts (hours)</Label><Input id="task-duration" name="durationHours" type="number" min={1} max={24} defaultValue={1} required/></div></div>
         {sendError && <p className="inline-error" role="alert">{sendError}</p>}
