@@ -11,7 +11,7 @@ const nodes = [
   { id: "audit", title: "Audit trail", sub: "Decisions + effects", x: 72, y: 46, icon: RiDatabase2Line, detail: "Persists human grants, delegations, policy decisions, approvals, revocations and browser outcomes. Records are associated with their Principal and mandate." },
   { id: "browser", title: "Browser worker", sub: "Isolated browser context", x: 40, y: 72, icon: RiComputerLine, detail: "A declared Eve subagent receives a bounded task. A fresh Chromium context provides screenshots and browser actions. It has no shell or arbitrary code tool. Idle contexts close after ten minutes." },
   { id: "model", title: "Vision model", sub: "Screenshot grounding", x: 8, y: 72, icon: RiCpuLine, detail: "The worker model interprets screenshots and proposes clicks, typing and navigation. Every proposed action passes through the control plane." },
-  { id: "target", title: "Clearance", sub: "External demo website", x: 72, y: 72, icon: RiGlobalLine, detail: "The separate Clearance demo is the browser-use target. The runtime operates its existing interface; the site is not embedded into the HAC application." },
+  { id: "target", title: "NYC Fibre", sub: "Internet provider website", x: 72, y: 72, icon: RiGlobalLine, detail: "Sisyphus operates NYC Fibre’s own website in its browser. The site is not embedded in Sisyphus." },
 ]
 export function Architecture() {
   const [selected, setSelected] = useState("control")
