@@ -28,6 +28,9 @@ export const browserAction = z.discriminatedUnion("kind", [
 ])
 export const actionLabel = (action: BrowserAction) => action.kind === "navigate" ? `Open ${action.url}` : action.kind === "click" ? `Click at (${action.x}, ${action.y})` : action.kind === "type" ? `Type ${action.text.length} characters` : action.kind === "press" ? `Press ${action.key}` : action.kind === "scroll" ? "Scroll page" : action.kind === "close" ? "Close browser" : "Inspect page"
 export const isInteraction = (a: BrowserAction) => ["click", "type", "press"].includes(a.kind)
+// In "ask" mode only clicks wait for the Principal. Typing and key presses act on the field a
+// click already focused, using details the Principal gave in the conversation.
+export const needsApproval = (a: BrowserAction) => a.kind === "click"
 function signature(grant: Omit<Grant, "signature">, key: string) {
   return createHmac("sha256", key).update(JSON.stringify([
     grant.id, grant.parentId, grant.mandateId, grant.principalId, grant.agent,
@@ -61,7 +64,7 @@ export function evaluate(m: Mandate, run: Run, key: string, now = Date.now()): {
     return deny("The child scope exceeds its parent authority.")
   if (run.action.kind === "navigate" && new URL(run.action.url).origin !== child.scope.origin) return deny(`This destination is outside the delegated origin. The only authorised website is ${child.scope.origin}.`)
   if (m.usedActions >= m.maxActions) return deny("The authorized browser action limit has been reached.")
-  if (child.scope.requireApproval && isInteraction(run.action) && !run.approvedAt)
-    return { decision: "require_approval", reason: "This browser interaction requires the Principal’s approval." }
+  if (child.scope.requireApproval && needsApproval(run.action) && !run.approvedAt)
+    return { decision: "require_approval", reason: "This click requires the Principal’s approval." }
   return { decision: "allow", reason: "Human authority, delegation, origin and action limit verified." }
 }

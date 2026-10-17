@@ -31,6 +31,15 @@ test("another origin is denied without consuming authority", () => {
   assert.equal(claimExecution(r.id, r.delegation.signature).run.status, "denied")
   assert.equal(transaction(s => s.mandates.find(x => x.id === m.id)!.usedActions), 0)
 })
+test("in ask mode typing and key presses run without approval; clicks wait", () => {
+  const m = mandate()
+  for (const action of [{ kind: "type", text: "2 West Loop Road" }, { kind: "press", key: "Tab" }] as const) {
+    const r = delegateBrowser(human, m.id, action, "worker-ask", "eve")
+    assert.equal(claimExecution(r.id, r.delegation.signature).execute, true)
+  }
+  const click = delegateBrowser(human, m.id, { kind: "click", x: 10, y: 10 }, "worker-ask", "eve")
+  assert.equal(claimExecution(click.id, click.delegation.signature).run.status, "approval")
+})
 test("interaction waits for human approval, then rechecks current policy", () => {
   const m = mandate()
   const r = delegateBrowser(human, m.id, { kind: "click", x: 100, y: 100 }, "worker-3", "eve")

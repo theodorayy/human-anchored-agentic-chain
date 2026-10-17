@@ -92,7 +92,7 @@ for (const allow of [false, true]) test(`task start confirms ${allow ? "autonomo
   await expect(page.getByRole("dialog")).toBeVisible()
   expect(sentMandate).toBe("")
   if (allow) await page.getByRole("radio", { name: /Let Eve complete the task/ }).check()
-  else await expect(page.getByRole("radio", { name: /Ask before each interaction/ })).toBeChecked()
+  else await expect(page.getByRole("radio", { name: /Ask before each click/ })).toBeChecked()
   await page.getByRole("button", { name: "Confirm & start task", exact: true }).click()
   await expect.poll(() => sentMandate).not.toBe("")
   const issued = transaction(s => s.mandates.find(m => m.id === sentMandate))

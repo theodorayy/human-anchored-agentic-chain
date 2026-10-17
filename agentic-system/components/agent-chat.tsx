@@ -118,7 +118,7 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
         <div className="task-confirmation"><Label>Task</Label><p>{confirmTask}</p></div>
         <div className="scope-preview"><RiGlobalLine size={16}/><span>{new URL(snapshot.targetUrl).hostname} only</span></div>
         <fieldset className="permission-options"><legend>How much may Sisyphus do?</legend>
-          <label><input type="radio" name="approval" value="ask" defaultChecked/><span><strong>Ask before each interaction</strong><small>Sisyphus can open and read pages. You approve each click, text entry, and key press.</small></span></label>
+          <label><input type="radio" name="approval" value="ask" defaultChecked/><span><strong>Ask before each click</strong><small>Sisyphus can open and read pages, and type the details you give it. You approve each click.</small></span></label>
           <label><input type="radio" name="approval" value="allow"/><span><strong>Let Sisyphus complete the task</strong><small>Allow clicks, typing, and submissions on this website without asking each time.</small></span></label>
         </fieldset>
         <div className="form-pair"><div><Label htmlFor="task-action-limit">Maximum browser actions</Label><Input id="task-action-limit" name="maxActions" type="number" min={1} max={200} defaultValue={100} required/></div><div><Label htmlFor="task-duration">Access lasts (hours)</Label><Input id="task-duration" name="durationHours" type="number" min={1} max={24} defaultValue={1} required/></div></div>
