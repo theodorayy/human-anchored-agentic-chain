@@ -1,0 +1,35 @@
+<!-- @dsCard height=320 subtitle="Sisyphus" -->
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap">
+<style>
+html,body{margin:0}body{background:var(--surface);font-family:var(--font-sans)}
+.cv{position:relative;width:960px;height:320px;overflow:hidden;background:var(--surface)}
+.cv svg{position:absolute;inset:0}
+.cv .txt{position:absolute;left:32px;bottom:32px;width:420px}
+.cv h1{margin:0;font:700 88px/.95 var(--font-sans);letter-spacing:-0.02em;color:var(--ink)}
+.cv p{margin:16px 0 0;font:400 14px/20px var(--font-sans);color:var(--ink-muted)}
+.hill{stroke:var(--ink);stroke-width:2.5;fill:none;stroke-linecap:round}
+.cut{stroke:var(--surface);stroke-width:3;fill:none}
+.b-gold{fill:var(--gold);rx:var(--radius-lg)}.b-ink{fill:var(--ink);rx:var(--radius-lg)}.b-mid{fill:var(--gold-mid);rx:var(--radius-lg)}.b-soft{fill:var(--gold-soft);rx:var(--radius-lg)}
+.ball{fill:var(--gold)}
+</style></head>
+<body><div class="cv">
+<!--
+blocks: gold 160x224 (space-9+space-8 wide), ink 224x176 bleeding right (96+64+64), gold-mid 224x32 top band, gold-soft 96x80, gold-mid 48x80, gold 224x80 bottom right; 16px gutters (space-4).
+arrangement: staggered stack of one tall gold slab and one ink slab, bands bleeding off the top and right edges.
+pattern: literal motif (the hill): one ink hairline hill under the blocks with a gold ball resting on it, three parallel hill curves cutting the ground colour through the blocks; chosen because the brand is a curve and a ball.
+steps and radii: space-4 gutters, space-8/9 widths, radius-lg corners, ball r=36 (about radius-lg x 2.5 on the scale), stroke 2.5/3.
+-->
+<svg viewBox="0 0 960 320" width="960" height="320" role="img" aria-label="Gold, ink and soft-gold blocks cut by rising hill curves with a gold ball on the hill">
+<path class="hill" d="M480 316 C 640 316 800 296 960 196"/>
+<rect class="b-gold" x="560" y="0" width="160" height="224"/>
+<rect class="b-ink" x="736" y="48" width="224" height="176"/>
+<rect class="b-mid" x="736" y="0" width="224" height="32"/>
+<rect class="b-soft" x="560" y="240" width="96" height="80"/>
+<rect class="b-mid" x="672" y="240" width="48" height="80"/>
+<rect class="b-gold" x="736" y="240" width="224" height="80"/>
+<path class="cut" d="M480 284 C 640 284 800 264 960 164"/><path class="cut" d="M480 252 C 640 252 800 232 960 132"/><path class="cut" d="M480 220 C 640 220 800 200 960 100"/>
+<circle class="ball" cx="512" cy="278.5" r="36"/>
+</svg>
+<div class="txt"><h1>Sisyphus</h1><p>Let Sisyphus save you some time.</p></div>
+</div></body></html>

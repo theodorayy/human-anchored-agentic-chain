@@ -1,0 +1,25 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-17T00:16:43Z"
+ },
+ "title": "Sisyphus",
+ "namespace": "Sisyphus",
+ "libraries": [],
+ "sections": {},
+ "groups": [],
+ "assetGroups": {},
+ "blobs": {},
+ "docs": {
+  "readme": "project/README.md",
+  "sections": []
+ },
+ "lastChange": {
+  "by": "Ray",
+  "at": "2026-10-17T00:16:43Z",
+  "via": "Claude (Cowork)",
+  "note": "Initial design language from Team 421 deck, slides 1-10"
+ }
+}

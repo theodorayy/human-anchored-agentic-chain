@@ -1,0 +1,9 @@
+<!-- @dsCard group="Foundations" height=330 subtitle="Ball on a rising curve, and the footer progress dot" -->
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap"></head>
+<body class="sy-stage">
+<svg id="hero" viewBox="0 0 2000 340" width="100%" data-lift="1.5" role="img" aria-label="A gold ball resting on a long rising curve"><path d="M0 330 C 900 330 1500 268 2000 80" class="sy-s-ink" stroke-width="5" stroke-linecap="round"/><circle id="ball" r="66" class="sy-f-gold"/></svg>
+<div style="display:flex;justify-content:flex-end;margin-top:12px"><svg id="mini" viewBox="0 0 220 56" width="220" role="img" aria-label="Progress dot on a small curve"><path d="M2 50 C 90 50 150 36 218 8" class="sy-s-border" stroke-width="2" stroke-linecap="round"/><circle id="dot" r="7" class="sy-f-gold"/></svg></div>
+<script>(function(){function put(svg,x,ballId,r){var p=svg.querySelector('path'),L=p.getTotalLength(),lo=0,hi=L,q;for(var i=0;i<40;i++){var m=(lo+hi)/2;q=p.getPointAtLength(m);if(q.x<x)lo=m;else hi=m}q=p.getPointAtLength((lo+hi)/2);var b=svg.querySelector(ballId);b.setAttribute('cx',q.x);b.setAttribute('cy',q.y-r-(+svg.dataset.lift||0))}
+put(document.getElementById('hero'),1440,'#ball',66);put(document.getElementById('mini'),150,'#dot',7)})();</script>
+</body></html>

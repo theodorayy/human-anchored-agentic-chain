@@ -15,7 +15,8 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "dev:freeid": "node scripts/freeid.mjs",
-    "test:runtime": "tsx tests/eve-runtime.ts"
+    "test:runtime": "tsx tests/eve-runtime.ts",
+    "tokens": "node scripts/sisyphus-tokens.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
