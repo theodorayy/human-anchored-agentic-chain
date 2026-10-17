@@ -35,7 +35,7 @@ export function LoginGate({
             <RiGitBranchLine size={24} />
           </span>
           <span>
-            HAC <small>Agentic system</small>
+            Sisyphus <small>Life-admin assistant</small>
           </span>
         </Link>
         <div className="login-intro">

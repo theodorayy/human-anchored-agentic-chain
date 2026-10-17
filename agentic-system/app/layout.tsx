@@ -13,7 +13,7 @@ const fontMono = Geist_Mono({
   variable: "--font-mono",
 })
 
-export const metadata = { title: "HAC · Agentic system", description: "Human intent. Bounded autonomy. An Eve runtime anchored by Free Identity." }
+export const metadata = { title: "Sisyphus", description: "Your life-admin assistant. It fills the forms with you and pauses for your approval." }
 
 export default function RootLayout({
   children,

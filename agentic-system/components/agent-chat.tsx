@@ -81,12 +81,12 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
         <div className="hero-mark"><RiSparkling2Line size={31}/></div>
         <span className="eyebrow">EVE · YOUR BROWSER AGENT</span>
         <h1>What should Eve do?</h1>
-        <p>Give Eve a task on the Clearance demo.<br/>You’ll confirm its permissions before it starts.</p>
+        <p>Tell Sisyphus what’s happening in your life.<br/>You’ll confirm its permissions before it starts.</p>
         <div className="task-steps"><span>1. Describe the task</span><span>2. Set permissions</span><span>3. Follow the work</span></div>
         <div className="suggestions">
-          {[{ title: "Summarize the review queue", text: "Open the Clearance demo and summarize the review queue. Do not change any records.", icon: RiGlobalLine }, { title: "Review the first customer", text: "Review the first queued customer in the Clearance demo. Inspect the evidence, flag missing or inconsistent information, and work through the review to a recorded outcome within my permissions. Do not invent evidence.", icon: RiShieldCheckLine }].map(s => <button key={s.title} onClick={() => setMessage(s.text)}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
+          {[{ title: "I’m moving to New York", text: "I’m moving to New York next month as an international student. What admin do I need to sort out?", icon: RiGlobalLine }, { title: "Set up home internet", text: "Set up home internet with NYC Fibre at 2 West Loop Road, Apt 14C, New York 10044. 1 Gig plan, email maria.santos@example.com, phone (212) 555-0142, earliest installation date. I don’t have an SSN.", icon: RiShieldCheckLine }].map(s => <button key={s.title} onClick={() => setMessage(s.text)}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
         </div>
-        <div className="welcome-target">Website <a href={snapshot.targetUrl} target="_blank" rel="noreferrer">Clearance demo <RiArrowRightUpLine size={12}/></a></div>
+        <div className="welcome-target">Website <a href={snapshot.targetUrl} target="_blank" rel="noreferrer">NYC Fibre <RiArrowRightUpLine size={12}/></a></div>
       </div> : <div className="messages">{agent.data.messages.map(m => <article key={m.id} className={`message ${m.role}`}>
         <div className="message-author">{m.role === "assistant" ? <><RiSparkling2Line size={15}/> Eve</> : "You"}</div>
         {m.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{part.text}</div> : part.type === "dynamic-tool" ? <details key={index} className="tool-event"><summary>{part.toolName === "browser_worker" ? "Browser task" : part.toolName === "inspect_mandate" ? "Permission check" : part.toolName.replaceAll("_", " ")}<small>{part.state === "output-available" ? "Response received" : part.state === "output-error" ? "Failed" : "In progress"}</small></summary><p>Individual browser actions and policy decisions are recorded in the Audit log.</p></details> : null)}
