@@ -18,6 +18,8 @@ function fixture(taskCount: number, orphans: number) {
     writeFileSync(join(eveDir, "events", `${id}-evnt_1.json`), "{}")
     writeFileSync(join(eveDir, "steps", `${id}-step_1.json`), "{}")
     mkdirSync(join(eveDir, "streams", "chunks", `strm_${id.slice(5)}_user`))
+    mkdirSync(join(eveDir, "streams", "chunks", `strm_${id.slice(5)}_user_ZXZlLnRhc2s`))
+    mkdirSync(join(eveDir, "streams", "chunks", `strm_${id.slice(5)}_system_abort`))
   }
   for (let i = 0; i < orphans; i++) run(`wrun_ORPHAN${i}`, t0 + i * minute)
   const sessions = []
@@ -48,7 +50,7 @@ test("prunes orphans, then the oldest tasks, until usage is under the low-water 
   for (const id of ["ORPHAN0", "ORPHAN3", "TASK0", "WORKER0", "TASK1", "WORKER1"]) {
     assert.ok(!existsSync(join(f.eveDir, "runs", `wrun_${id}.json`)), id)
     assert.ok(!existsSync(join(f.eveDir, "events", `wrun_${id}-evnt_1.json`)), id)
-    assert.ok(!existsSync(join(f.eveDir, "streams", "chunks", `strm_${id}_user`)), id)
+    for (const channel of ["user", "user_ZXZlLnRhc2s", "system_abort"]) assert.ok(!existsSync(join(f.eveDir, "streams", "chunks", `strm_${id}_${channel}`)), `${id} ${channel}`)
   }
   const state = f.readState()
   assert.deepEqual(state.eveSessions.map((s: { id: string }) => s.id), ["wrun_TASK2", "wrun_TASK3", "wrun_TASK4", "wrun_TASK5"])

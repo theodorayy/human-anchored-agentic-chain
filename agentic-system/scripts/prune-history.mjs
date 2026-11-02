@@ -32,7 +32,9 @@ export function deleteRunsBefore(eveDir, cutoff) {
   }
   const chunks = join(eveDir, "streams", "chunks")
   if (existsSync(chunks)) for (const d of readdirSync(chunks)) {
-    if (old.has(`wrun_${d.replace(/^strm_/, "").replace(/_user$/, "")}`)) rmSync(join(chunks, d), { recursive: true, force: true })
+    // Stream folders are strm_<run>_<channel>, for example _user, _user_<task> or _system_abort.
+    const run = /^strm_([0-9A-Z]+)_/.exec(d)?.[1]
+    if (run && old.has(`wrun_${run}`)) rmSync(join(chunks, d), { recursive: true, force: true })
   }
   return old.size
 }
