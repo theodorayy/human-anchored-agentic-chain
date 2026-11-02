@@ -17,15 +17,11 @@ type Props = {
   onSession: (id: string) => void;
   onCreatePermissions: (input: TaskPermissions) => Promise<Mandate | null>;
   continuation?: Continuation;
-  onStalled?: () => void;
 }
 // Survives remounts, so reconnecting the chat never resends an approval continuation.
 const consumedContinuations = new Set<string>()
-// A turn can finish on the server while a proxy holds the last stream bytes. With no new
-// events for this long, the parent remounts the chat; resuming replays to the turn boundary.
-const STALL_MS = 15_000
 
-export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation, onStalled }: Props) {
+export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation }: Props) {
   const [message, setMessage] = useState("")
   const [confirmTask, setConfirmTask] = useState("")
   const [starting, setStarting] = useState(false)
@@ -38,7 +34,12 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
     headers: () => ({ "x-hac-mandate": credentials.current.mandateId, "x-hac-task": encodeURIComponent(credentials.current.title) }),
   })
   useEffect(() => { if (mandateId) credentials.current.mandateId = mandateId }, [mandateId])
-  const busy = agent.status === "submitted" || agent.status === "streaming" || agent.status === "resuming"
+  const working = agent.status === "submitted" || agent.status === "streaming" || agent.status === "resuming"
+  // True while the chat is only following a background browser task, not waiting on a reply to
+  // the human. The human can still send then; the message steers the session.
+  const [following, setFollowing] = useState(false)
+  const canSteer = following && agent.status === "streaming"
+  const busy = working && !canSteer
   const currentSession = agent.session?.sessionId || sessionId
   const currentRuns = snapshot.runs.filter(r => r.rootSessionId === currentSession || (!r.rootSessionId && r.mode === "eve" && r.mandateId === mandateId))
   const awaitingApproval = !!currentSession && currentRuns.some(r => r.status === "approval")
@@ -68,26 +69,24 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
   }, [agent.events])
   useEffect(() => {
     if (!backgroundPending || agent.status !== "ready" || !currentSession) return
-    const timer = window.setTimeout(() => { void agent.resume().catch(() => {}) }, 1500)
+    const timer = window.setTimeout(() => {
+      setFollowing(true)
+      void agent.resume().catch(() => {}).finally(() => setFollowing(false))
+    }, 1500)
     return () => window.clearTimeout(timer)
   }, [backgroundPending, agent.status, currentSession, agent])
-  useEffect(() => {
-    if (agent.status !== "streaming" || !currentSession || !onStalled) return
-    const timer = window.setTimeout(onStalled, STALL_MS)
-    return () => window.clearTimeout(timer)
-  }, [agent.status, agent.data.messages, currentSession, onStalled])
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }) }, [agent.data.messages, agent.status])
   useEffect(() => {
     if (!continuation || consumedContinuations.has(continuation.id) || busy || !currentSession || !connected) return
     consumedContinuations.add(continuation.id)
-    void agent.send(continuation.message).catch(() => { setMessage(continuation.message) })
-  }, [continuation, busy, currentSession, connected, agent])
+    void agent.send(continuation.message, canSteer ? { turnPolicy: "steer" } : undefined).catch(() => { setMessage(continuation.message) })
+  }, [continuation, busy, canSteer, currentSession, connected, agent])
 
   async function send() {
     if (!message.trim() || !connected || busy || starting) return
     if (!currentSession) { setConfirmTask(message.trim()); return }
     const text = message; setMessage(""); setSendError("")
-    await agent.send(text).catch(() => { setMessage(text) })
+    await agent.send(text, canSteer ? { turnPolicy: "steer" } : undefined).catch(() => { setMessage(text) })
   }
   async function startTask(input: TaskPermissions) {
     setStarting(true); setSendError("")
@@ -100,11 +99,11 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       await agent.send(task).catch(() => { setMessage(task) })
     } finally { setStarting(false) }
   }
-  const status = authorityEnded ? "Permissions ended" : awaitingApproval ? "Your approval is needed" : agent.error ? "Sisyphus encountered a problem" : busy ? "Sisyphus is working" : "Sisyphus is waiting for you"
-  const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Sisyphus automatically." : busy ? "Browser actions and their results appear in Task details and Audit log." : "Read Sisyphus’s response below, or send a follow-up."
+  const status = authorityEnded ? "Permissions ended" : awaitingApproval ? "Your approval is needed" : agent.error ? "Sisyphus encountered a problem" : working ? "Sisyphus is working" : "Sisyphus is waiting for you"
+  const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Sisyphus automatically." : working ? "Browser actions and their results appear in Task details and Audit log." : "Read Sisyphus’s response below, or send a follow-up."
   return <div className="chat-view">
     {currentSession && <div className={`task-status ${awaitingApproval ? "needs-approval" : ""}`} role="status">
-      {awaitingApproval ? <span className="sy-approve__icon"><PauseIcon/></span> : busy ? <RiLoader4Line size={18} className="animate-spin"/> : <RiShieldCheckLine size={18}/>}
+      {awaitingApproval ? <span className="sy-approve__icon"><PauseIcon/></span> : working ? <RiLoader4Line size={18} className="animate-spin"/> : <RiShieldCheckLine size={18}/>}
       <div><strong>{status}</strong><p>{detail}</p></div>
       {awaitingApproval && <a href="#task-approvals" className="sy-btn sy-btn--pill sy-btn--gold">Review action <RiArrowRightUpLine size={14}/></a>}
     </div>}
