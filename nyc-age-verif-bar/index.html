@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Door check — FreeID</title>
+<meta name="description" content="Prototype bar door age check using the age flags from a FreeID-held NYS licence.">
+<style>
+  :root {
+    --night: #111418;
+    --panel: #1c2128;
+    --ink: #f4f6f8;
+    --muted: #9aa5b1;
+    --yes: #12823f;
+    --no: #c62828;
+    --unknown: #e0a100;
+    --radius: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--night);
+    color: var(--ink);
+    font: 600 20px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  main { flex: 1; display: flex; flex-direction: column; padding: 24px; gap: 24px; }
+  section { flex: 1; display: flex; flex-direction: column; gap: 24px; }
+  section[hidden] { display: none; }
+  h1 { margin: 0; font-size: 28px; text-align: center; letter-spacing: 0.02em; }
+  .prompt { margin: 0; text-align: center; color: var(--muted); }
+  .choices { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 640px) { .choices { grid-template-columns: 1fr; } }
+  .choice, .next {
+    border: 0;
+    border-radius: var(--radius);
+    color: var(--ink);
+    background: var(--panel);
+    font: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .choice { font-size: clamp(64px, 16vw, 160px); font-weight: 900; min-height: 220px; outline: 4px solid #2c333c; }
+  .choice:focus-visible, .next:focus-visible { outline: 6px solid #6cb4ff; }
+  .choice:disabled { opacity: 0.5; cursor: progress; }
+  .verdict {
+    flex: 1;
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    gap: 12px;
+  }
+  .verdict.yes { background: var(--yes); }
+  .verdict.no { background: var(--no); }
+  .verdict.unknown { background: var(--unknown); color: #1a1300; }
+  .verdict .word { font-size: clamp(88px, 24vw, 260px); font-weight: 900; line-height: 1; }
+  .verdict.unknown .word { font-size: clamp(56px, 13vw, 150px); }
+  .verdict .threshold { font-size: clamp(28px, 6vw, 56px); font-weight: 800; }
+  .verdict .detail { font-size: 22px; max-width: 32ch; }
+  .error-box { flex: 1; border-radius: var(--radius); background: var(--panel); outline: 4px solid var(--no); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 16px; }
+  .error-box .word { font-size: clamp(40px, 9vw, 96px); font-weight: 900; }
+  .error-box .code { font-family: ui-monospace, Menlo, monospace; color: var(--muted); font-size: 18px; }
+  .note { margin: 0; text-align: center; color: var(--muted); font-size: 16px; font-weight: 500; }
+  .next { min-height: 96px; font-size: 36px; font-weight: 800; background: #2f3a46; }
+  footer { padding: 0 24px 16px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 500; }
+</style>
+</head>
+<body>
+<main>
+  <section id="start">
+    <h1>Door check</h1>
+    <p class="prompt">Choose the age to check. The guest approves on their FreeID app.</p>
+    <div class="choices">
+      <button type="button" class="choice" data-min="18">18+</button>
+      <button type="button" class="choice" data-min="21">21+</button>
+    </div>
+  </section>
+
+  <section id="result" hidden aria-live="assertive">
+    <div class="verdict" id="verdict">
+      <div class="word" id="verdict-word"></div>
+      <div class="threshold" id="verdict-threshold"></div>
+      <div class="detail" id="verdict-detail"></div>
+    </div>
+    <p class="note" id="source-note"></p>
+    <button type="button" class="next">Next guest</button>
+  </section>
+
+  <section id="error" hidden aria-live="assertive">
+    <div class="error-box">
+      <div class="word">Check failed</div>
+      <div class="detail" id="error-text"></div>
+      <div class="code" id="error-code"></div>
+    </div>
+    <button type="button" class="next">Next guest</button>
+  </section>
+</main>
+<footer>Prototype. No names, dates of birth or other details are shown or kept.</footer>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id)
+  // Fixed copy for every outcome; nothing from the URL or any released value is ever rendered.
+  const LICENCE_SOURCE_LABEL = "Age from NYS licence barcode — not verified by New York State"
+  const VERDICTS = {
+    yes: { word: 'YES', detail: 'Old enough.' },
+    no: { word: 'NO', detail: 'Not old enough.' },
+    unknown: { word: "CAN'T CONFIRM", detail: 'No age from a licence was shared. Check ID by hand.' },
+  }
+  // Fixed copy for the reason codes /api/callback sends.
+  const REASONS = {
+    declined: 'The guest chose not to share.',
+    expired: 'The check expired or was started on another device. Start again.',
+    signin: 'FreeID could not complete the check. Start again.',
+    unavailable: 'FreeID could not be reached. Start again.',
+    decrypt: 'The phone\'s answer could not be opened. Start again.',
+    issuer: 'The credential was not issued by FreeID.',
+    chip: 'The guest\'s FreeID passport check is not verified.',
+    binding: 'The phone\'s approval did not match this check. Start again.',
+    fields: 'The phone sent something other than the age check asked for. Refused.',
+    licence_expired: 'The licence in the guest\'s FreeID app has expired.',
+    threshold: 'Choose 18+ or 21+.',
+    error: 'Something went wrong. Start again.',
+  }
+
+  function show(id) {
+    for (const section of ['start', 'result', 'error']) $(section).hidden = section !== id
+  }
+
+  function showVerdict({ min, decision }) {
+    const verdict = VERDICTS[decision]
+    if (!verdict || (min !== 18 && min !== 21)) return showError('error')
+    $('verdict').className = `verdict ${decision}`
+    $('verdict-word').textContent = verdict.word
+    $('verdict-threshold').textContent = `${min}+`
+    $('verdict-detail').textContent = verdict.detail
+    $('source-note').textContent = decision === 'unknown' ? '' : LICENCE_SOURCE_LABEL
+    show('result')
+  }
+
+  function showError(code) {
+    const known = Object.hasOwn(REASONS, code) ? code : 'error'
+    $('error-text').textContent = REASONS[known]
+    $('error-code').textContent = `Reason: ${known}`
+    show('error')
+  }
+
+  function nextGuest() {
+    history.replaceState(null, '', '/')
+    document.querySelectorAll('.choice').forEach((b) => { b.disabled = false })
+    show('start')
+  }
+
+  // The only inputs: the two thresholds and "Next guest". The threshold goes to the server as 18 or 21 only.
+  document.querySelectorAll('.choice').forEach((button) => {
+    button.addEventListener('click', () => {
+      const min = button.dataset.min === '21' ? '21' : '18'
+      document.querySelectorAll('.choice').forEach((b) => { b.disabled = true })
+      location.assign(`/api/login?min=${min}`)
+    })
+  })
+  document.querySelectorAll('.next').forEach((button) => button.addEventListener('click', nextGuest))
+  window.addEventListener('pageshow', () => document.querySelectorAll('.choice').forEach((b) => { b.disabled = false }))
+
+  // Returning from FreeID: the decision comes only from the server's sealed, read-once cookie.
+  const params = new URLSearchParams(location.search)
+  const outcome = params.get('freeid')
+  const reason = params.get('reason')
+  history.replaceState(null, '', '/')
+  if (outcome === 'error') {
+    showError(reason)
+  } else if (outcome === 'result') {
+    fetch('/api/result', { credentials: 'same-origin', cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('no result'))))
+      .then(showVerdict)
+      .catch(() => showError('expired'))
+  }
+})()
+</script>
+</body>
+</html>

@@ -126,7 +126,7 @@
 <main>
   <section>
     <h1>Fibre internet for your new place</h1>
-    <p class="lede">Moving in? Check your building, pick a plan and verify who you are. No Social Security number needed.</p>
+    <p class="lede">Moving in? Share your address and verify who you are with FreeID, then pick a plan. No Social Security number needed.</p>
     <p class="error" id="return-note" role="alert" hidden></p>
 
     <div class="steps">
@@ -138,22 +138,30 @@
         <h2>Check your address</h2>
         <p class="summary-line" id="sum-address">Where should we connect you?</p>
         <div class="body">
-          <form id="form-address" novalidate>
-            <label for="street">Street address</label>
-            <input id="street" name="street" autocomplete="street-address" placeholder="e.g. 2 West Loop Road">
-            <div class="row">
+          <!-- FreeID only: the address comes from the holder's NYS driver's licence, never typed. -->
+          <div id="addr-start">
+            <button type="button" class="id-option freeid" id="start-freeid">
+              <strong><span class="freeid-badge">Start with FreeID</span></strong>
+              <span>One approval on your phone shares the address on your NYS driver's licence and verifies who you are with your passport chip. Nothing is uploaded.</span>
+            </button>
+            <p class="error" id="err-address" role="alert" hidden></p>
+          </div>
+
+          <div id="addr-freeid" hidden>
+            <div class="qr-panel">
+              <svg class="qr" id="qr-start" viewBox="0 0 29 29" role="img" aria-label="FreeID sign-in QR code"></svg>
               <div>
-                <label for="unit">Apartment or unit</label>
-                <input id="unit" name="unit" placeholder="e.g. 14C">
-              </div>
-              <div>
-                <label for="zip">ZIP code</label>
-                <input id="zip" name="zip" inputmode="numeric" placeholder="e.g. 10044">
+                <p style="margin:0 0 8px;font-weight:700;font-size:1.1rem">Scan with the FreeID app</p>
+                <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for the address on your NYS driver's licence, and your name, date of birth, a masked passport number and whether your passport is valid. You choose on your phone.</p>
+                <p class="waiting"><span class="pulse" aria-hidden="true"></span>Waiting for approval on your phone</p>
               </div>
             </div>
-            <p class="error" id="err-address" hidden></p>
-            <div class="actions"><button type="submit" class="primary" id="check-address">Check availability</button></div>
-          </form>
+          </div>
+
+          <div id="addr-missing" hidden>
+            <p class="error" role="alert">We didn't receive an address. NYC Fibre needs the address on your NYS driver's licence, shared through FreeID, to check your building. Add your licence in the FreeID app if you haven't, and allow the address when you approve.</p>
+            <div class="actions"><button type="button" class="primary" id="retry-address">Try again with FreeID</button></div>
+          </div>
         </div>
       </div>
 
@@ -203,8 +211,9 @@
       <div class="step locked" id="step-identity">
         <div class="step-dot">4</div>
         <h2>Verify your identity</h2>
-        <p class="summary-line" id="sum-identity">We're required to confirm who opens an account.</p>
+        <p class="summary-line" id="sum-identity">We're required to confirm who opens an account. FreeID does this when you share your address.</p>
         <div class="body">
+          <!-- Normally skipped: identity is verified with the address in step 1. Shown only to retry. -->
           <div id="id-choose">
             <div class="id-options">
               <button type="button" class="id-option freeid" id="verify-freeid">
@@ -225,7 +234,7 @@
 
           <div id="id-freeid" hidden>
             <div class="qr-panel">
-              <svg class="qr" id="qr" viewBox="0 0 29 29" role="img" aria-label="FreeID sign-in QR code"></svg>
+              <svg class="qr" id="qr-identity" viewBox="0 0 29 29" role="img" aria-label="FreeID sign-in QR code"></svg>
               <div>
                 <p style="margin:0 0 8px;font-weight:700;font-size:1.1rem">Scan with the FreeID app</p>
                 <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for your name, date of birth, a masked passport number and whether your passport is valid, and, if you've added one, the address on your NYS driver's licence. You choose on your phone.</p>
@@ -287,20 +296,22 @@
   const shots = params.get('shots') === '1'
   // Demo values for screenshot mode; override with URL parameters,
   // e.g. ?shots=1&name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031&address=…
+  // (`address` is the already-masked string the server would show.)
   const demo = {
     name: params.get('name') || 'Alex Morgan',
     dob: params.get('dob') || '14 March 1998',
     docno: params.get('docno') || 'K1234123Z',
     country: params.get('country') || 'Singapore',
     expiry: params.get('expiry') || 'April 2031',
-    address: params.get('address') || '1 Main St, New York, NY 10044',
+    maskedAddress: params.get('address') || '1•• M••• St, Apt ••, New York, NY 100••',
   }
   const masked = '••••••' + demo.docno.slice(-4)
   if (shots) {
     document.querySelectorAll('.prototype-note').forEach((el) => el.remove())
   }
   const order = ['step-address', 'step-plan', 'step-contact', 'step-identity']
-  const state = { plan: null, price: null }
+  // maskedAddress: the server-masked licence address; the real one never reaches this page.
+  const state = { plan: null, price: null, maskedAddress: null }
   const PROGRESS_KEY = 'nyf-signup'
   // Fixed copy for the reason codes /api/callback sends; URL text is never shown.
   const REASONS = {
@@ -352,13 +363,22 @@
     added++
   }
 
-  function completeAddress() {
-    const street = $('street').value.trim()
-    const zip = $('zip').value.trim()
-    const unit = $('unit').value.trim()
-    const full = `${street}${unit ? `, Apt ${unit}` : ''}, New York, NY ${zip}`
-    $('o-address').textContent = full
-    advance('step-address', `Fibre is available at ${full}.`)
+  // Step 1 completes only with a masked address from a FreeID release; there is no typed address.
+  function completeAddress(maskedAddress) {
+    state.maskedAddress = maskedAddress
+    $('addr-start').hidden = false
+    $('addr-freeid').hidden = true
+    $('addr-missing').hidden = true
+    $('o-address').textContent = maskedAddress
+    advance('step-address', `Fibre is available at ${maskedAddress}. ${LICENCE_SOURCE_LABEL}.`)
+  }
+
+  // A verified release without an address: identity is done, but step 1 is not.
+  function showAddressMissing() {
+    $('addr-start').hidden = true
+    $('addr-freeid').hidden = true
+    $('addr-missing').hidden = false
+    $('retry-address').focus()
   }
 
   function completePlan() {
@@ -372,18 +392,6 @@
     $('o-install').textContent = install.value
     advance('step-contact', `${email}, ${phone}. Installation ${install.value}.`)
   }
-
-  $('form-address').addEventListener('submit', (e) => {
-    e.preventDefault()
-    const street = $('street').value.trim()
-    const zip = $('zip').value.trim()
-    if (!street || !/^\d{5}$/.test(zip)) {
-      showError('err-address', 'Enter a street address and a 5-digit ZIP code.')
-      return
-    }
-    showError('err-address', '')
-    completeAddress()
-  })
 
   function selectPlan(plan) {
     document.querySelectorAll('.choice').forEach((b) => {
@@ -420,9 +428,9 @@
   $('use-ssn').addEventListener('click', () => showError('err-identity', 'SSN checks are not part of this prototype. Use FreeID instead.'))
   $('upload-passport').addEventListener('click', () => showError('err-identity', 'Uploads are not part of this prototype. Use FreeID instead.'))
 
-  function drawQr() {
+  function drawQr(id) {
     // Decorative QR-style pattern for the prototype (not a scannable code)
-    const svg = $('qr')
+    const svg = $(id)
     const n = 29
     let seed = 7
     const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 }
@@ -444,9 +452,7 @@
   // Real mode: keep the signup in this tab while FreeID runs, then come back to it.
   function saveProgress() {
     const progress = {
-      street: $('street').value.trim(),
-      unit: $('unit').value.trim(),
-      zip: $('zip').value.trim(),
+      maskedAddress: state.maskedAddress,
       plan: state.plan,
       price: state.price,
       email: $('email').value.trim(),
@@ -461,9 +467,6 @@
     let progress
     try { progress = JSON.parse(sessionStorage.getItem(PROGRESS_KEY) || 'null') } catch { progress = null }
     if (!progress || !Array.isArray(progress.completed)) return false
-    $('street').value = progress.street || ''
-    $('unit').value = progress.unit || ''
-    $('zip').value = progress.zip || ''
     if (progress.plan) selectPlan(progress.plan)
     $('email').value = progress.email || ''
     $('phone').value = progress.phone || ''
@@ -473,9 +476,13 @@
       }
       install.value = progress.install
     }
-    if (progress.completed.includes('step-address')) completeAddress()
-    if (progress.completed.includes('step-plan') && state.plan) completePlan()
-    if (progress.completed.includes('step-contact')) completeContact()
+    if (progress.completed.includes('step-address') && typeof progress.maskedAddress === 'string') {
+      completeAddress(progress.maskedAddress)
+      if (progress.completed.includes('step-plan') && state.plan) {
+        completePlan()
+        if (progress.completed.includes('step-contact')) completeContact()
+      }
+    }
     // The identity step (where results and errors show) opens only once contact details are done
     return $('step-contact').classList.contains('done')
   }
@@ -484,8 +491,28 @@
     saveProgress()
     location.assign(full ? '/api/login?full=1' : '/api/login')
   }
+  // "Start with FreeID": one release for the address (step 1) and identity (step 4).
+  function startWithFreeId() {
+    showError('err-address', '')
+    if (!shots) {
+      $('start-freeid').disabled = true
+      $('retry-address').disabled = true
+      saveProgress()
+      location.assign('/api/login?flow=start')
+      return
+    }
+    $('addr-start').hidden = true
+    $('addr-missing').hidden = true
+    $('addr-freeid').hidden = false
+    drawQr('qr-start')
+    setTimeout(approveStart, 3500)
+  }
+  $('start-freeid').addEventListener('click', startWithFreeId)
+  $('retry-address').addEventListener('click', startWithFreeId)
   // Coming back via the browser's back button restores a disabled button from cache
-  window.addEventListener('pageshow', () => { $('verify-freeid').disabled = false })
+  window.addEventListener('pageshow', () => {
+    for (const id of ['verify-freeid', 'start-freeid', 'retry-address']) $(id).disabled = false
+  })
 
   $('verify-freeid').addEventListener('click', () => {
     showError('err-identity', '')
@@ -496,7 +523,7 @@
     }
     $('id-choose').hidden = true
     $('id-freeid').hidden = false
-    drawQr()
+    drawQr('qr-identity')
     setTimeout(approve, 3500)
   })
 
@@ -506,6 +533,9 @@
     $('id-result').hidden = false
     $('o-identity').textContent = 'Verified with FreeID'
     $('o-due').textContent = '$100 deposit (refundable)'
+    if ($('step-identity').classList.contains('locked')) {
+      $('sum-identity').textContent = 'Verified with FreeID. Review it here once your contact details are in.'
+    }
   }
 
   // Screenshot mode: simulated release with demo values
@@ -516,7 +546,13 @@
     $('r-valid').textContent = `Valid until ${demo.expiry}`
     $('r-docno').textContent = masked
     $('r-country').textContent = demo.country
-    $('r-address').textContent = demo.address
+    $('r-address').textContent = demo.maskedAddress
+  }
+
+  // Screenshot mode: the start release fills the address and identity together
+  function approveStart() {
+    approve()
+    completeAddress(demo.maskedAddress)
   }
 
   function revealFullNumber() {
@@ -562,7 +598,7 @@
   // Licence data comes from an unsigned barcode, so it is always shown with where it came from.
   const LICENCE_SOURCE_LABEL = "From NYS driver's licence barcode — not verified by New York State"
 
-  function renderReceived({ received, checks }) {
+  function renderReceived({ received, checks, address_masked: maskedAddress }) {
     markVerified()
     renderChecks(checks || {})
     const got = new Set(Array.isArray(received) ? received : [])
@@ -583,7 +619,8 @@
       const dt = document.createElement('dt')
       const dd = document.createElement('dd')
       dt.textContent = label
-      dd.textContent = status
+      // The address is shown only in its server-masked form.
+      dd.textContent = label === 'Address' && typeof maskedAddress === 'string' ? maskedAddress : status
       if (label === 'Passport number' && !full) dd.append(' ', requestFull)
       if (source) {
         const note = document.createElement('small')
@@ -617,9 +654,26 @@
     $('done').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   })
 
-  // Real mode: returning from FreeID
+  // Real mode: returning from FreeID, either to step 1 (flow=start) or to the identity step
   const outcome = shots ? null : params.get('freeid')
-  if (outcome === 'verified' || outcome === 'error') {
+  const fromStart = params.get('flow') === 'start'
+  if ((outcome === 'verified' || outcome === 'error') && fromStart) {
+    const reason = REASONS[params.get('reason')] || REASONS.error
+    history.replaceState(null, '', location.pathname)
+    restoreProgress()
+    if (outcome === 'error') {
+      showError('err-address', `FreeID: ${reason}`)
+    } else {
+      fetch('/api/result', { credentials: 'same-origin', cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('no result'))))
+        .then((result) => {
+          renderReceived(result)
+          if (typeof result.address_masked === 'string' && result.address_masked) completeAddress(result.address_masked)
+          else showAddressMissing()
+        })
+        .catch(() => showError('err-address', 'Your FreeID sign-in has expired. Start with FreeID again.'))
+    }
+  } else if (outcome === 'verified' || outcome === 'error') {
     const reason = REASONS[params.get('reason')] || REASONS.error
     history.replaceState(null, '', location.pathname)
     if (!restoreProgress()) {

@@ -1,0 +1,12 @@
+{
+  "name": "nyc-age-verif-bar",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "jose": "^5.10.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "gen-keys": "node scripts/gen-keys.mjs"
+  }
+}

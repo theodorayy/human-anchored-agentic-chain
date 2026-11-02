@@ -1,5 +1,6 @@
 // Tells the page once which fields NYC Fibre received and which checks passed,
-// then clears it. Never carries a released value.
+// then clears it. Never carries a released value; the only address it carries is
+// the server-masked one.
 import { RESULT_COOKIE, RESULT_COOKIE_PATH, clearCookie, openCookie } from './_lib.js'
 
 export default function handler(req, res) {
@@ -14,5 +15,7 @@ export default function handler(req, res) {
     return
   }
   res.statusCode = 200
-  res.end(JSON.stringify({ received: result.received, checks: result.checks }))
+  const body = { received: result.received, checks: result.checks }
+  if (typeof result.address_masked === 'string') body.address_masked = result.address_masked
+  res.end(JSON.stringify(body))
 }

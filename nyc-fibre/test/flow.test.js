@@ -139,6 +139,15 @@ function decodedCookies(response) {
   })
 }
 
+// The parts of the licence address the mask hides. City and state are shown on purpose.
+const MASKED_ADDRESS = '1•• M••• St, Apt ••, New York, NY 100••'
+const hiddenAddressValues = (address) => [
+  address.street_address,
+  address.postal_code,
+  address.country,
+  ...address.street_address.split(' ').filter((word) => word.length > 1 && !['St', 'Apt'].includes(word)),
+]
+
 function assertNoValues(text, values, where) {
   for (const value of values) assert.ok(!text.includes(value), `${where} must not carry a released value`)
 }
@@ -218,8 +227,10 @@ test('an identity/v1 release with the licence address reports it as received, ne
     'document_number_masked',
     'licence.address',
   ])
+  // Only the server-masked address reaches the page.
+  assert.equal(body.address_masked, MASKED_ADDRESS)
 
-  const values = [...releasedValues(FIELDS), ...Object.values(LICENCE_FIELDS.address)]
+  const values = [...releasedValues(FIELDS), ...hiddenAddressValues(LICENCE_FIELDS.address)]
   assertNoValues(callback.headers.location, values, 'the callback redirect')
   assertNoValues(decodedCookies(callback).join('\n'), values, 'the result cookie')
   assertNoValues(result.body, values, 'the /api/result body')
@@ -301,4 +312,169 @@ test('a tampered result cookie is ignored', async () => {
   const forged = `nyf_result=${Buffer.from(JSON.stringify({ phase: 'verified', received: [], checks: {}, exp: Date.now() + 60000 })).toString('base64url')}.bad`
   const response = await call(api.result, { cookies: [forged] })
   assert.equal(response.status, 404)
+})
+
+// "Start with FreeID" (flow=start): one release fills the address step with a
+// masked address and verifies identity. The real address stays on the server,
+// in a cookie encrypted to it.
+const findCookie = (response, name) => setCookies(response).find((c) => c.startsWith(`${name}=`))
+// Decodes every dot-separated part, so neither a signed nor an encrypted cookie can hide a value in plain text.
+const decodedEverything = (response) =>
+  setCookies(response)
+    .map((cookie) => {
+      const [pair, ...attributes] = cookie.split(';')
+      const parts = pair.slice(pair.indexOf('=') + 1).split('.')
+      return [pair, ...attributes, ...parts.map((part) => Buffer.from(part, 'base64url').toString())].join('\n')
+    })
+    .join('\n')
+
+async function startRelease(licence) {
+  const { login, state, authorize } = await startLogin({ flow: 'start' })
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), identity: true, licence })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  return { login, authorize, callback }
+}
+
+test('Start with FreeID asks for the same fields and records the flow in the flow cookie', async () => {
+  const { login, authorize } = await startLogin({ flow: 'start' })
+  assert.equal(
+    authorize.searchParams.get('scope'),
+    'openid passport passport:name passport:birthdate passport:nationality passport:expiry passport:number_masked licence licence:address',
+  )
+  const { openCookie } = await import('../api/_lib.js')
+  assert.equal(openCookie({ headers: { cookie: cookiePairs(login).join('; ') } }, 'nyf_freeid').flow, 'start')
+  const { login: plain } = await startLogin()
+  assert.equal(openCookie({ headers: { cookie: cookiePairs(plain).join('; ') } }, 'nyf_freeid').flow, 'identity')
+})
+
+test('Start with FreeID returns to step 1 with a masked address; the real one stays encrypted on the server', async () => {
+  const { callback } = await startRelease({ fields: { address: LICENCE_FIELDS.address } })
+  assert.equal(callback.headers.location, '/?freeid=verified&flow=start')
+
+  const addressCookie = findCookie(callback, 'nyf_address')
+  assert.ok(addressCookie, 'the address is kept for the order')
+  assert.match(addressCookie, /; Path=\/api; HttpOnly; Secure; SameSite=Strict; Max-Age=3600$/)
+
+  const result = await call(api.result, { cookies: cookiePairs(callback) })
+  assert.equal(result.status, 200)
+  const body = JSON.parse(result.body)
+  assert.equal(body.address_masked, MASKED_ADDRESS)
+  assert.ok(body.received.includes('licence.address'))
+  assert.deepEqual(body.checks, { passive_authentication: true, csca_chain: true, app_attest: true, face_match: false })
+
+  // Nothing the browser can read carries the real address (or any passport value).
+  const values = [...releasedValues(FIELDS), ...hiddenAddressValues(LICENCE_FIELDS.address)]
+  assertNoValues(callback.headers.location, values, 'the callback redirect')
+  assertNoValues(JSON.stringify(callback.headers), values, 'the callback headers')
+  assertNoValues(decodedEverything(callback), values, 'the callback cookies')
+  assertNoValues(result.body, values, 'the /api/result body')
+  assertNoValues(JSON.stringify(result.headers), values, 'the /api/result headers')
+  assert.ok(!findCookie(callback, 'nyf_result').includes('USA'))
+
+  // Only the server can open the address cookie.
+  const { openEncryptedCookie } = await import('../api/_lib.js')
+  const pair = addressCookie.split(';')[0]
+  const kept = openEncryptedCookie({ headers: { cookie: pair } }, 'nyf_address')
+  assert.deepEqual(kept.address, LICENCE_FIELDS.address)
+  assert.equal(kept.source, 'nys_licence')
+  assert.equal(kept.label, "From NYS driver's licence barcode — not verified by New York State")
+})
+
+test('the address cookie refuses tampering, renaming and another secret', async () => {
+  const { callback } = await startRelease({ fields: { address: LICENCE_FIELDS.address } })
+  const { openEncryptedCookie } = await import('../api/_lib.js')
+  const value = findCookie(callback, 'nyf_address').split(';')[0].slice('nyf_address='.length)
+  const open = (cookie, name = 'nyf_address') => openEncryptedCookie({ headers: { cookie } }, name)
+  assert.ok(open(`nyf_address=${value}`))
+
+  const [iv, ciphertext, tag] = value.split('.')
+  const flipped = Buffer.from(ciphertext, 'base64url')
+  flipped[0] ^= 1
+  assert.equal(open(`nyf_address=${iv}.${flipped.toString('base64url')}.${tag}`), null)
+  assert.equal(open(`nyf_other=${value}`, 'nyf_other'), null, 'the cookie name is bound in')
+  assert.equal(open('nyf_address=garbage'), null)
+
+  const saved = process.env.COOKIE_SECRET
+  process.env.COOKIE_SECRET = 'another-secret'
+  try {
+    assert.equal(open(`nyf_address=${value}`), null)
+  } finally {
+    process.env.COOKIE_SECRET = saved
+  }
+})
+
+test('Start with FreeID without an address leaves step 1 unfilled and drops any kept address', async () => {
+  // Licence enrolled but the holder declined the address; and no licence at all.
+  for (const licence of [{ fields: LICENCE_FIELDS, disclose: ['given_name', 'family_name'] }, undefined]) {
+    const { callback } = await startRelease(licence)
+    assert.equal(callback.headers.location, '/?freeid=verified&flow=start')
+    assert.match(findCookie(callback, 'nyf_address'), /^nyf_address=; Path=\/api; .*Max-Age=0/)
+    const body = JSON.parse((await call(api.result, { cookies: cookiePairs(callback) })).body)
+    assert.equal(body.address_masked, undefined)
+    assert.ok(!body.received.includes('licence.address'))
+    // Identity is still verified.
+    assert.ok(body.received.includes('given_name'))
+  }
+})
+
+test('Start with FreeID failures return to step 1', async () => {
+  const { login, state } = await startLogin({ flow: 'start' })
+  const declined = await call(api.callback, { query: { error: 'access_denied', state }, cookies: cookiePairs(login) })
+  assert.equal(declined.headers.location, '/?freeid=error&reason=declined&flow=start')
+
+  const bad = await startLogin({ flow: 'start' })
+  freeid.release = await buildRelease({ iss: issuer, nonce: 'stale-nonce', now: new Date(), identity: true })
+  const refused = await call(api.callback, { query: { code: 'code-1', state: bad.state }, cookies: cookiePairs(bad.login) })
+  assert.equal(refused.headers.location, '/?freeid=error&reason=binding&flow=start')
+  assert.ok(!findCookie(refused, 'nyf_address'), 'a refused release leaves the kept address alone')
+})
+
+test('the identity step keeps a previously kept address when its release has none', async () => {
+  const { login, state } = await startLogin()
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), identity: true })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  assert.equal(callback.headers.location, '/?freeid=verified')
+  assert.ok(!findCookie(callback, 'nyf_address'))
+})
+
+const pageScript = () => /<script>([\s\S]*)<\/script>/.exec(readFileSync(new URL('../index.html', import.meta.url), 'utf8'))[1]
+const stepAddress = () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  return /<!-- Step 1: Address -->([\s\S]*?)<!-- Step 2: Plan -->/.exec(html)[1]
+}
+
+test('step 1 has no way to type an address: FreeID is the only way through', () => {
+  const step = stepAddress()
+  assert.ok(!/<(input|select|textarea|form)\b/.test(step), 'step 1 must have no form fields')
+  assert.ok(!step.includes('Check availability'))
+  assert.ok(step.includes('id="start-freeid"') && step.includes('Start with FreeID'))
+  assert.ok(step.includes('id="retry-address"'))
+  const script = pageScript()
+  for (const id of ['street', 'unit', 'zip', 'form-address', 'check-address']) {
+    assert.ok(!script.includes(`$('${id}')`), `the page script must not use #${id}`)
+  }
+  assert.ok(script.includes("location.assign('/api/login?flow=start')"))
+})
+
+test('a release without an address cannot complete step 1', () => {
+  const script = pageScript()
+  // The address step completes only through completeAddress, and only with a masked address.
+  assert.equal(script.match(/advance\('step-address'/g).length, 1)
+  assert.match(script, /function completeAddress\(maskedAddress\) \{[\s\S]*?advance\('step-address'/)
+  const callers = [...script.matchAll(/completeAddress\(([^)]*)\)/g)].map((m) => m[1]).filter((arg) => arg !== 'maskedAddress')
+  assert.deepEqual([...new Set(callers)].sort(), ['demo.maskedAddress', 'progress.maskedAddress', 'result.address_masked'])
+  // Without one, the page asks the holder to try again with FreeID.
+  assert.match(
+    script,
+    /if \(typeof result\.address_masked === 'string' && result\.address_masked\) completeAddress\(result\.address_masked\)\s*else showAddressMissing\(\)/,
+  )
+  assert.ok(stepAddress().includes("NYC Fibre needs the address on your NYS driver's licence, shared through FreeID"))
+})
+
+test('the identity panel shows the masked address with its source on both paths', () => {
+  const script = pageScript()
+  assert.match(script, /function renderReceived\(\{ received, checks, address_masked: maskedAddress \}\)/)
+  assert.ok(script.includes("dd.textContent = label === 'Address' && typeof maskedAddress === 'string' ? maskedAddress : status"))
+  // The start flow renders the same identity panel as the identity step.
+  assert.match(script, /\.then\(\(result\) => \{\s*renderReceived\(result\)/)
 })

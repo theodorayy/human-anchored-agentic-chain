@@ -1,5 +1,5 @@
 // Shared helpers for NYC Fibre's FreeID relying-party functions.
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { importJWK, SignJWT } from 'jose'
 
 export const ISSUER = process.env.FREEID_ISSUER || 'https://api.free-id.org'
@@ -13,6 +13,15 @@ export const FLOW_COOKIE = 'nyf_freeid'
 export const RESULT_COOKIE = 'nyf_result'
 
 export const RESULT_COOKIE_PATH = '/api/result'
+
+// The real licence address, kept for the order. Encrypted (not just signed), so
+// only this server can read it; scoped to /api so it never rides on page loads.
+export const ADDRESS_COOKIE = 'nyf_address'
+export const ADDRESS_COOKIE_PATH = '/api'
+
+// Where a FreeID sign-in started: 'start' (top of step 1, fills the address and
+// identity) or 'identity' (the identity step). Carried in the flow cookie.
+export const flowOf = (value) => (value === 'start' ? 'start' : 'identity')
 
 // Failures reach the page as short codes only; the page maps each to fixed copy,
 // so nothing from the URL is ever rendered.
@@ -30,8 +39,13 @@ export const REASON_CODES = [
   'error', // anything else
 ]
 
-export function failureLocation(code) {
-  return `/?freeid=error&reason=${REASON_CODES.includes(code) ? code : 'error'}`
+export function failureLocation(code, flow = 'identity') {
+  const reason = REASON_CODES.includes(code) ? code : 'error'
+  return `/?freeid=error&reason=${reason}${flowOf(flow) === 'start' ? '&flow=start' : ''}`
+}
+
+export function successLocation(flow = 'identity') {
+  return flowOf(flow) === 'start' ? '/?freeid=verified&flow=start' : '/?freeid=verified'
 }
 
 const BASE_SCOPES = [
@@ -146,17 +160,54 @@ export function clearCookie(name, path = '/') {
   return `${name}=; Path=${path}; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
 }
 
-export function openCookie(req, name) {
+function readCookie(req, name) {
   const header = req.headers.cookie || ''
   const match = header.split(/;\s*/).find((c) => c.startsWith(`${name}=`))
-  if (!match) return null
-  const [data, mac] = match.slice(name.length + 1).split('.')
+  return match ? match.slice(name.length + 1) : null
+}
+
+export function openCookie(req, name) {
+  const raw = readCookie(req, name)
+  if (!raw) return null
+  const [data, mac] = raw.split('.')
   if (!data || !mac) return null
   const expected = Buffer.from(sign(name, data))
   const given = Buffer.from(mac)
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null
   try {
     const value = JSON.parse(Buffer.from(data, 'base64url').toString())
+    return value.exp > Date.now() ? value : null
+  } catch {
+    return null
+  }
+}
+
+// Encrypted cookies: AES-256-GCM under a key derived (HKDF-SHA-256) from
+// COOKIE_SECRET, with the cookie name as associated data. For values the
+// browser must carry but never read.
+const ENCRYPTION_INFO = 'nyc-fibre encrypted cookie v1 (AES-256-GCM)'
+const encryptionKey = () => Buffer.from(hkdfSync('sha256', secret(), 'nyc-fibre', ENCRYPTION_INFO, 32))
+
+export function encryptCookie(name, value, maxAgeSeconds, path = '/') {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', encryptionKey(), iv)
+  cipher.setAAD(Buffer.from(name, 'utf8'))
+  const plaintext = JSON.stringify({ ...value, exp: Date.now() + maxAgeSeconds * 1000 })
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const data = [iv, ciphertext, cipher.getAuthTag()].map((part) => part.toString('base64url')).join('.')
+  return `${name}=${data}; Path=${path}; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`
+}
+
+export function openEncryptedCookie(req, name) {
+  const raw = readCookie(req, name)
+  if (!raw) return null
+  const [iv, ciphertext, tag] = raw.split('.').map((part) => Buffer.from(part || '', 'base64url'))
+  if (!iv || iv.length !== 12 || !tag || tag.length !== 16 || !ciphertext?.length) return null
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), iv)
+    decipher.setAAD(Buffer.from(name, 'utf8'))
+    decipher.setAuthTag(tag)
+    const value = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8'))
     return value.exp > Date.now() ? value : null
   } catch {
     return null
