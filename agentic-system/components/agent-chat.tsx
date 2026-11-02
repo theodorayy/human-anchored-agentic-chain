@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useEveAgent } from "eve/react"
 import { RiArrowUpLine, RiStopFill, RiArrowRightUpLine, RiLoader4Line, RiShieldCheckLine, RiGlobalLine, RiHome4Line } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
@@ -51,6 +51,26 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       if (!sessionId) window.history.replaceState(null, "", `/s/${agent.session.sessionId}`)
     }
   }, [agent.session?.sessionId, sessionId, onSession])
+  // The browser worker runs as an eve background task. Its result arrives in a turn the server
+  // starts by itself, after this client's turn has ended, so keep following the session until
+  // every background task the agent started has reported back.
+  const backgroundPending = useMemo(() => {
+    const started = new Set<string>(), finished = new Set<string>()
+    for (const event of agent.events) {
+      const data = ("data" in event ? event.data : {}) as { backgroundTask?: { status?: string; taskId?: string }; message?: unknown }
+      if (event.type === "subagent.completed" && data.backgroundTask?.status === "working" && data.backgroundTask.taskId) started.add(data.backgroundTask.taskId)
+      if (event.type === "message.received" && typeof data.message === "string") {
+        const id = /^Background task (\S+)/.exec(data.message)?.[1]
+        if (id) finished.add(id)
+      }
+    }
+    return [...started].some(id => !finished.has(id))
+  }, [agent.events])
+  useEffect(() => {
+    if (!backgroundPending || agent.status !== "ready" || !currentSession) return
+    const timer = window.setTimeout(() => { void agent.resume().catch(() => {}) }, 1500)
+    return () => window.clearTimeout(timer)
+  }, [backgroundPending, agent.status, currentSession, agent])
   useEffect(() => {
     if (agent.status !== "streaming" || !currentSession || !onStalled) return
     const timer = window.setTimeout(onStalled, STALL_MS)

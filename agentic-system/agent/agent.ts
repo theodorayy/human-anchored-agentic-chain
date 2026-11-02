@@ -1,6 +1,6 @@
 import { defineAgent } from "eve"
 
 export default defineAgent({
-  model: process.env.EVE_MODEL || "openai/gpt-5.4-mini",
+  model: process.env.EVE_MODEL || "anthropic/claude-sonnet-5.5",
   defaultTools: false,
 })
