@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { SignJWT, jwtVerify, importJWK } from 'jose'
-import { buildRelease, FIELDS, k } from './fixtures.js'
+import { buildRelease, FIELDS, LICENCE_FIELDS, k } from './fixtures.js'
 
 let server
 let issuer
@@ -96,11 +96,11 @@ async function startLogin(query = {}) {
   return { login, authorize, state: authorize.searchParams.get('state') }
 }
 
-test('login asks for the passport fields without the full number by default', async () => {
+test('login asks for the passport fields and the licence address, without the full number by default', async () => {
   const { authorize } = await startLogin()
   assert.equal(
     authorize.searchParams.get('scope'),
-    'openid passport passport:name passport:birthdate passport:nationality passport:expiry passport:number_masked',
+    'openid passport passport:name passport:birthdate passport:nationality passport:expiry passport:number_masked licence licence:address',
   )
   assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256')
   assert.ok(authorize.searchParams.get('nonce'))
@@ -194,6 +194,53 @@ test('the page renders only field names and checks, never released values', () =
     assert.ok(!new RegExp(`\\.${name}\\b`).test(script), `the page script must not read ${name} as a value`)
   }
   assert.ok(script.includes("Your details were sent securely to NYC Fibre. They aren't shown on this page."))
+})
+
+test('an identity/v1 release with the licence address reports it as received, never its value', async () => {
+  const { login, state } = await startLogin()
+  freeid.release = await buildRelease({
+    iss: issuer,
+    nonce: freeid.nonce,
+    now: new Date(),
+    identity: true,
+    licence: { fields: { address: LICENCE_FIELDS.address } },
+  })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  assert.equal(callback.headers.location, '/?freeid=verified')
+  const result = await call(api.result, { cookies: cookiePairs(callback) })
+  const body = JSON.parse(result.body)
+  assert.deepEqual(body.received, [
+    'given_name',
+    'family_name',
+    'birthdate',
+    'nationality',
+    'passport_expiry',
+    'document_number_masked',
+    'licence.address',
+  ])
+
+  const values = [...releasedValues(FIELDS), ...Object.values(LICENCE_FIELDS.address)]
+  assertNoValues(callback.headers.location, values, 'the callback redirect')
+  assertNoValues(decodedCookies(callback).join('\n'), values, 'the result cookie')
+  assertNoValues(result.body, values, 'the /api/result body')
+})
+
+test('an identity/v1 release without a licence reports no address', async () => {
+  const { login, state } = await startLogin()
+  freeid.release = await buildRelease({ iss: issuer, nonce: freeid.nonce, now: new Date(), identity: true })
+  const callback = await call(api.callback, { query: { code: 'code-1', state }, cookies: cookiePairs(login) })
+  assert.equal(callback.headers.location, '/?freeid=verified')
+  const result = await call(api.result, { cookies: cookiePairs(callback) })
+  assert.ok(!JSON.parse(result.body).received.includes('licence.address'))
+})
+
+test('the page labels a received licence address with its source, and shows nothing without one', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  const script = /<script>([\s\S]*)<\/script>/.exec(html)[1]
+  const label = "From NYS driver's licence barcode — not verified by New York State"
+  assert.ok(script.includes(`const LICENCE_SOURCE_LABEL = ${JSON.stringify(label)}`))
+  assert.match(script, /if \(got\.has\('licence\.address'\)\) rows\.push\(\['Address', 'Received', LICENCE_SOURCE_LABEL\]\)/)
+  assert.ok(!/\.address\b(?!')/.test(script.replace(/demo\.address/g, '')), 'the page script must not read an address value')
 })
 
 const reasonOf = (response) => new URL(response.headers.location, 'https://nyc-fibre.test').searchParams.get('reason')

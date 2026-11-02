@@ -102,6 +102,7 @@
   dl.released { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 16px 0 0; }
   dl.released dt { color: var(--muted); }
   dl.released dd { margin: 0; font-weight: 600; }
+  dl.released .source-note { display: block; font-weight: 400; color: var(--muted); font-size: .9em; }
   .released-note { margin: 12px 0 0; color: var(--muted); }
   .link-btn { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; font-weight: 600; font-size: 0.95rem; }
 
@@ -227,7 +228,7 @@
               <svg class="qr" id="qr" viewBox="0 0 29 29" role="img" aria-label="FreeID sign-in QR code"></svg>
               <div>
                 <p style="margin:0 0 8px;font-weight:700;font-size:1.1rem">Scan with the FreeID app</p>
-                <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for your name, date of birth, a masked passport number and whether your passport is valid. You choose on your phone.</p>
+                <p style="margin:0 0 14px;color:var(--muted)">NYC Fibre is asking for your name, date of birth, a masked passport number and whether your passport is valid, and, if you've added one, the address on your NYS driver's licence. You choose on your phone.</p>
                 <p class="waiting" id="waiting"><span class="pulse" aria-hidden="true"></span>Waiting for approval on your phone</p>
               </div>
             </div>
@@ -247,6 +248,7 @@
                 <dt>Date of birth</dt><dd id="r-dob">Shared on approval</dd>
                 <dt>Passport</dt><dd id="r-valid"></dd>
                 <dt>Passport number</dt><dd><span id="r-docno"></span> <button type="button" class="link-btn" id="request-full-number">Request full number</button></dd>
+                <dt>Address</dt><dd><span id="r-address"></span><small class="source-note">From NYS driver's licence barcode — not verified by New York State</small></dd>
               </dl>
               <p class="released-note" id="r-note" hidden></p>
             </div>
@@ -284,13 +286,14 @@
   // page runs the real "Verify with FreeID" flow through /api/login.
   const shots = params.get('shots') === '1'
   // Demo values for screenshot mode; override with URL parameters,
-  // e.g. ?shots=1&name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031
+  // e.g. ?shots=1&name=Jane%20Doe&dob=1%20May%201998&docno=E7654321A&country=Singapore&expiry=April%202031&address=…
   const demo = {
     name: params.get('name') || 'Alex Morgan',
     dob: params.get('dob') || '14 March 1998',
     docno: params.get('docno') || 'K1234123Z',
     country: params.get('country') || 'Singapore',
     expiry: params.get('expiry') || 'April 2031',
+    address: params.get('address') || '1 Main St, New York, NY 10044',
   }
   const masked = '••••••' + demo.docno.slice(-4)
   if (shots) {
@@ -513,6 +516,7 @@
     $('r-valid').textContent = `Valid until ${demo.expiry}`
     $('r-docno').textContent = masked
     $('r-country').textContent = demo.country
+    $('r-address').textContent = demo.address
   }
 
   function revealFullNumber() {
@@ -555,6 +559,9 @@
     return li
   }
 
+  // Licence data comes from an unsigned barcode, so it is always shown with where it came from.
+  const LICENCE_SOURCE_LABEL = "From NYS driver's licence barcode — not verified by New York State"
+
   function renderReceived({ received, checks }) {
     markVerified()
     renderChecks(checks || {})
@@ -567,15 +574,23 @@
     const full = got.has('document_number')
     if (full) rows.push(['Passport number', 'Received (full)'])
     else if (got.has('document_number_masked')) rows.push(['Passport number', 'Received (masked)'])
+    // Optional: absent when the holder has no licence or chose not to share it.
+    if (got.has('licence.address')) rows.push(['Address', 'Received', LICENCE_SOURCE_LABEL])
     const list = document.querySelector('dl.released')
     const requestFull = $('request-full-number')
     list.replaceChildren()
-    for (const [label, status] of rows) {
+    for (const [label, status, source] of rows) {
       const dt = document.createElement('dt')
       const dd = document.createElement('dd')
       dt.textContent = label
       dd.textContent = status
       if (label === 'Passport number' && !full) dd.append(' ', requestFull)
+      if (source) {
+        const note = document.createElement('small')
+        note.className = 'source-note'
+        note.textContent = source
+        dd.append(note)
+      }
       list.append(dt, dd)
     }
     requestFull.hidden = full

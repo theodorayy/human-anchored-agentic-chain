@@ -1,5 +1,6 @@
 // FreeID redirects here once the holder has released their passport details
-// from their phone (or declined). We exchange the code, verify the ID token,
+// (and, optionally, the address from their NYS driver's licence) from their
+// phone (or declined). We exchange the code, verify the ID token,
 // collect the encrypted release from /userinfo, decrypt and verify it, and tell
 // the page in a short-lived sealed cookie which fields arrived and which checks
 // passed. Released values stay on this server: they are never logged and never
@@ -44,16 +45,22 @@ const RELEASE_REASONS = {
   'Unexpected field': 'fields',
   'Release is missing required details': 'fields',
   "Release includes a field that wasn't requested": 'fields',
+  'Licence has expired': 'fields',
   'Passport has expired': 'passport_expired',
 }
 
 /**
  * What the browser may learn about a verified release: the names of the fields
- * received and the credential's boolean checks. Never a value.
+ * received and the credential's boolean checks. Never a value. Licence fields
+ * use FreeID's namespaced ids (`licence.address`); the page labels them as
+ * unsigned barcode data.
  */
-function releaseSummary({ fields, verification }) {
+function releaseSummary({ fields, verification, address }) {
   return {
-    received: KNOWN_FIELDS.filter((name) => Object.hasOwn(fields, name)),
+    received: [
+      ...KNOWN_FIELDS.filter((name) => Object.hasOwn(fields, name)),
+      ...(address ? ['licence.address'] : []),
+    ],
     checks: {
       passive_authentication: verification?.passive_authentication === true,
       csca_chain: verification?.csca_chain === true,
@@ -142,7 +149,8 @@ export default async function handler(req, res) {
     }
 
     // This prototype has no account store, so the verified values go no further
-    // than here; a real ISP would save release.fields against the new account.
+    // than here; a real ISP would save release.fields (and release.address, with
+    // its source label) against the new account.
     redirect(res, '/?freeid=verified', [
       clearCookie(FLOW_COOKIE),
       sealCookie(

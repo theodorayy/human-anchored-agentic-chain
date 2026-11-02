@@ -25,7 +25,7 @@ export const REASON_CODES = [
   'issuer', // not issued by FreeID / not a passport credential
   'chip', // passport chip or app attestation not verified
   'binding', // key binding: holder key, audience, nonce, freshness, sd_hash
-  'fields', // missing, unexpected, unrequested, duplicate or malformed fields
+  'fields', // missing, unexpected, unrequested, duplicate or malformed fields (or an expired licence)
   'passport_expired',
   'error', // anything else
 ]
@@ -42,6 +42,9 @@ const BASE_SCOPES = [
   'passport:nationality',
   'passport:expiry',
   'passport:number_masked',
+  // Optional: the address from the holder's NYS driver's licence barcode, if they have one and agree.
+  'licence',
+  'licence:address',
 ]
 /** Scopes for a release; the full passport number is only asked for on request. */
 export function scopesFor({ full = false } = {}) {
