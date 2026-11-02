@@ -14,6 +14,7 @@ primary_region = 'iad'
   OIDC_CLIENT_ID = 'hac-agentic-system-web'
   BROWSER_TARGET_URL = 'https://nyc-fibre.vercel.app'
   IDENTITY_PROVIDER_ORIGINS = 'https://api.free-id.org,https://www.free-id.org'
+  HAC_PRUNE_HISTORY = 'true'
 
 [[mounts]]
   source = 'hac_data'
