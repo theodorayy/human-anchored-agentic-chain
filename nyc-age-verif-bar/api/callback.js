@@ -128,7 +128,7 @@ export default async function handler(req, res) {
     }
 
     // The flag dates go no further than this line: only the decision leaves.
-    const decision = decide(release.licence, attempt.min, release.today)
+    const decision = decide(release, attempt.min, release.today)
     redirect(res, '/?freeid=result', [
       clearCookie(FLOW_COOKIE),
       sealCookie(RESULT_COOKIE, { phase: 'decided', min: attempt.min, decision }, RESULT_MAX_AGE_SECONDS, RESULT_COOKIE_PATH),

@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Door check — FreeID</title>
-<meta name="description" content="Prototype bar door age check using the age flags from a FreeID-held NYS licence.">
 <style>
   :root {
     --night: #111418;
@@ -67,7 +66,6 @@
   .error-box { flex: 1; border-radius: var(--radius); background: var(--panel); outline: 4px solid var(--no); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 16px; }
   .error-box .word { font-size: clamp(40px, 9vw, 96px); font-weight: 900; }
   .error-box .code { font-family: ui-monospace, Menlo, monospace; color: var(--muted); font-size: 18px; }
-  .note { margin: 0; text-align: center; color: var(--muted); font-size: 16px; font-weight: 500; }
   .next { min-height: 96px; font-size: 36px; font-weight: 800; background: #2f3a46; }
   footer { padding: 0 24px 16px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 500; }
 </style>
@@ -88,7 +86,6 @@
       <div class="threshold" id="verdict-threshold"></div>
       <div class="detail" id="verdict-detail"></div>
     </div>
-    <p class="note" id="source-note"></p>
     <button type="button" class="next">Next guest</button>
   </section>
 
@@ -105,7 +102,6 @@
 (() => {
   const $ = (id) => document.getElementById(id)
   // Fixed copy for every outcome; nothing from the URL or any released value is ever rendered.
-  const LICENCE_SOURCE_LABEL = "Age from NYS licence barcode — not verified by New York State"
   const VERDICTS = {
     yes: { word: 'YES', detail: '' },
     no: { word: 'NO', detail: '' },
@@ -138,7 +134,6 @@
     $('verdict-word').textContent = verdict.word
     $('verdict-threshold').textContent = `${min}+`
     $('verdict-detail').textContent = verdict.detail
-    $('source-note').textContent = decision === 'unknown' ? '' : LICENCE_SOURCE_LABEL
     show('result')
   }
 

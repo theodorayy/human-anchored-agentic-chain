@@ -2,7 +2,8 @@
 // synthetic FreeID releases, adapted from NYC Fibre's. The credential is
 // identity/v1 by default (passport/v1 with `passportV1: true`); its passport
 // field digests are always signed, but no passport disclosure is presented
-// unless a test asks (`presentPassport`). `licence` enrols an NYS licence.
+// unless a test asks (`presentPassport`). `passportFlags` signs passport age
+// flags into the passport block and presents them; `licence` enrols an NYS licence.
 import { createHash, randomBytes } from 'node:crypto'
 import { CompactEncrypt, SignJWT, exportJWK, generateKeyPair } from 'jose'
 
@@ -45,7 +46,7 @@ export const PASSPORT_FIELDS = {
   document_number_masked: '••••••123Z',
 }
 
-// A 28-year-old: every flag in the past.
+// A 28-year-old: every flag in the past. Used for both the passport and the licence flags.
 export const AGE_FLAGS = {
   under_18_until: '2016-03-14',
   under_19_until: '2017-03-14',
@@ -76,6 +77,9 @@ export function addDays(iso, days) {
 
 /**
  * Builds a release; `tweak` hooks let each test break exactly one thing.
+ * `passportFlags`: age flags signed into the passport block (identity/v1) or,
+ * with `passportV1`, into the flat passport/v1 digests; `disclosePassportFlags`
+ * lists those presented (default: all).
  * `licence`: `{ fields, verification, disclose, showContainer, container }`, where
  * `fields` are the licence fields enrolled (default: the age flags), `disclose`
  * lists those presented (default: all) and the container is presented when any
@@ -87,17 +91,22 @@ export async function buildRelease(tweak = {}) {
   const passportDisclosures = Object.entries({ ...PASSPORT_FIELDS, ...(tweak.passportFields || {}) }).map(
     ([name, value]) => disclosure(name, value),
   )
+  const passportFlagDisclosures = Object.entries(tweak.passportFlags || {}).map(([name, value]) =>
+    disclosure(name, value),
+  )
   const iat = tweak.now ? Math.floor(tweak.now.getTime() / 1000) : nowSeconds
   const verification = {
     passive_authentication: true,
     csca_chain: true,
     liveness: 'blink',
-    face_match: 'not_performed',
+    face_match: 'matched',
     app_attest: true,
     ...(tweak.verification || {}),
   }
-  const passportDigests = passportDisclosures.map((d) => d.digest).sort()
+  const passportDigests = [...passportDisclosures, ...passportFlagDisclosures].map((d) => d.digest).sort()
   const presentedDisclosures = passportDisclosures.filter((d) => (tweak.presentPassport || []).includes(d.name))
+  const disclosePassportFlags = tweak.disclosePassportFlags || passportFlagDisclosures.map((d) => d.name)
+  presentedDisclosures.push(...passportFlagDisclosures.filter((d) => disclosePassportFlags.includes(d.name)))
 
   let claims
   if (tweak.passportV1) {

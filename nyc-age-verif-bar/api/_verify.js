@@ -1,12 +1,15 @@
 // Verifies a FreeID release for the door check: a compact JWE (ECDH-ES, A256GCM)
 // whose plaintext is an SD-JWT VC presentation `issuerJwt~d1~…~dN~kbJwt`.
-// Trimmed from NYC Fibre's verifier. The door asks only for the licence age
-// flags (`licence:age_flags`), so the only disclosures it accepts are:
-//   - the `nys_licence` container (identity/v1, one of the 3 top-level digests),
-//   - inside it, `under_18_until`, `under_19_until` and `under_21_until`.
-// Any passport field or other licence field, even one FreeID signed, is refused:
-// the door never asked for it and must not receive it.
-// passport/v1 credentials (no licence possible) still verify, with no licence.
+// Trimmed from NYC Fibre's verifier. The door asks only for the age flags
+// (`passport:age_flags`, `licence:age_flags`), so the only disclosures it accepts are:
+//   - among the passport digests of an identity/v1 credential, `under_18_until`,
+//     `under_19_until` and `under_21_until`;
+//   - the `nys_licence` container (one of the 3 top-level digests) and, inside
+//     it, the same three flags.
+// Any other passport or licence field, even one FreeID signed, is refused: the
+// door never asked for it and must not receive it.
+// passport/v1 credentials (old flat format) carry no age flags and no licence:
+// they verify, with neither.
 // Every failure throws an Error whose message is safe to show; no message ever
 // contains a released value.
 import { createHash } from 'node:crypto'
@@ -14,7 +17,7 @@ import { compactDecrypt, createLocalJWKSet, importJWK, jwtVerify } from 'jose'
 
 export const PASSPORT_VCT = 'https://free-id.org/vct/passport/v1'
 export const IDENTITY_VCT = 'https://free-id.org/vct/identity/v1'
-// The age flags: the date the holder turns 18, 19 and 21 (AAMVA DDH, DDI, DDJ).
+// The age flags: the date the holder turns 18, 19 and 21.
 export const AGE_FLAGS = ['under_18_until', 'under_19_until', 'under_21_until']
 // Everything else FreeID can disclose; signed or not, the door refuses it.
 const PASSPORT_FIELDS = [
@@ -39,8 +42,6 @@ const OTHER_LICENCE_FIELDS = [
 const LICENCE_CONTAINER = 'nys_licence'
 const TOP_LEVEL_DIGESTS = 3
 const MAX_LICENCE_DIGESTS = 16
-// The licence barcode carries no issuer signature; this is how the door labels any answer taken from it.
-export const LICENCE_SOURCE_LABEL = 'Age from NYS licence barcode — not verified by New York State'
 
 const MAX_AGE_SECONDS = 5 * 60
 const MAX_SKEW_SECONDS = 60
@@ -121,19 +122,21 @@ async function verifyIssuerJwt(issuerJwt, issuerJwks, issuer, now) {
   ) {
     fail('Not a FreeID credential')
   }
-  // The licence is bound to a passport holder (`holder_match: "passport"`), and
-  // FreeID only issues after an attested on-device passport check.
+  // FreeID only issues after an attested on-device passport check; the door
+  // also needs the face on the chip matched to the holder.
   const checks = passport.verification
   if (
     !isRecord(checks) ||
     checks.passive_authentication !== true ||
     checks.csca_chain !== true ||
+    checks.face_match !== 'matched' ||
     checks.app_attest !== true
   ) {
     fail('Passport chip not verified')
   }
   return {
     payload,
+    nested,
     passportDigests: passport._sd,
     topLevelDigests: nested ? payload._sd : [],
   }
@@ -196,10 +199,11 @@ function readLicenceContainer(value, today) {
   return { verification, digests }
 }
 
-function readAgeFlags(disclosures) {
+/** Reads age-flag disclosures; `otherFields` are known fields of that block, refused as unrequested. */
+function readAgeFlags(disclosures, otherFields) {
   const flags = {}
   for (const { name, value } of disclosures) {
-    if (OTHER_LICENCE_FIELDS.includes(name)) fail("Release includes a field that wasn't requested")
+    if (otherFields.includes(name)) fail("Release includes a field that wasn't requested")
     if (!AGE_FLAGS.includes(name)) fail('Unexpected field')
     if (Object.hasOwn(flags, name)) fail('Duplicate disclosure')
     if (!isCalendarDate(value)) fail('Malformed disclosure')
@@ -209,15 +213,19 @@ function readAgeFlags(disclosures) {
 }
 
 /**
- * Resolves every disclosure against the digests FreeID signed. Signed passport
- * fields and non-age licence fields are refused as unrequested; disclosures that
- * match no digest (or a digest at the wrong level) are refused as unsigned.
+ * Resolves every disclosure against the digests FreeID signed. Signed fields
+ * other than the age flags are refused as unrequested; disclosures that match
+ * no digest (or a digest at the wrong level) are refused as unsigned.
  */
 function readDisclosures(encodedList, credential, today) {
   const byDigest = parseDisclosures(encodedList)
-  for (const { name } of take(byDigest, credential.passportDigests)) {
+  const passportDisclosures = take(byDigest, credential.passportDigests)
+  // passport/v1 has no age flags; one there is not FreeID's format.
+  if (!credential.nested && passportDisclosures.length > 0) {
+    const [{ name }] = passportDisclosures
     fail(PASSPORT_FIELDS.includes(name) ? "Release includes a field that wasn't requested" : 'Unexpected field')
   }
+  const passport = readAgeFlags(passportDisclosures, PASSPORT_FIELDS)
 
   let licence = null
   const containers = take(byDigest, credential.topLevelDigests)
@@ -226,11 +234,11 @@ function readDisclosures(encodedList, credential, today) {
     const [{ name, value }] = containers
     if (name !== LICENCE_CONTAINER) fail('Unexpected field')
     const { verification, digests } = readLicenceContainer(value, today)
-    licence = { verification, flags: readAgeFlags(take(byDigest, digests)) }
+    licence = { verification, flags: readAgeFlags(take(byDigest, digests), OTHER_LICENCE_FIELDS) }
   }
 
   if (byDigest.size > 0) fail('Disclosure not signed by FreeID')
-  return licence
+  return { passport, licence }
 }
 
 async function verifyKeyBinding(kbJwt, holderJwk, { sdJwt, clientId, nonce, now }) {
@@ -257,10 +265,12 @@ async function verifyKeyBinding(kbJwt, holderJwk, { sdJwt, clientId, nonce, now 
 }
 
 /**
- * `licence` is the disclosed `nys_licence` container with its age flags, or
- * null when none was disclosed (no licence enrolled, or the guest declined it:
- * the two look the same). `today` is the local date the checks used.
- * @returns {Promise<{ vct: string, today: string,
+ * `passport` holds the disclosed passport age flags (possibly none: a
+ * passport/v1 credential, or none shared). `licence` is the disclosed
+ * `nys_licence` container with its age flags, or null when none was disclosed
+ * (no licence enrolled, or the guest declined it: the two look the same).
+ * `today` is the local date the checks used.
+ * @returns {Promise<{ vct: string, today: string, passport: Record<string, string>,
  *   licence: { verification: object, flags: Record<string, string> } | null }>}
  */
 export async function verifyRelease({
@@ -284,22 +294,24 @@ export async function verifyRelease({
 
   const credential = await verifyIssuerJwt(issuerJwt, issuerJwks, issuer, at)
   const today = localDate(at, timeZone)
-  const licence = readDisclosures(disclosures, credential, today)
+  const { passport, licence } = readDisclosures(disclosures, credential, today)
   const holderKey = { kty: 'OKP', crv: 'Ed25519', x: credential.payload.cnf.jwk.x }
   const sdJwt = presentation.slice(0, presentation.length - kbJwt.length)
   await verifyKeyBinding(kbJwt, holderKey, { sdJwt, clientId, nonce, now: at })
 
-  return { vct: credential.payload.vct, today, licence }
+  return { vct: credential.payload.vct, today, passport, licence }
 }
 
 /**
  * The door's answer for threshold `min` (18 or 21): 'yes' once today has reached
  * the date in `under_<min>_until` (the birthday itself counts), 'no' before it,
- * and 'unknown' when that flag (or the whole licence) wasn't disclosed.
- * Never 'yes' without the flag.
+ * and 'unknown' when that flag wasn't disclosed. The passport's flag (chip-backed)
+ * wins; the licence's is used only when the passport didn't disclose it.
+ * Never 'yes' without a flag.
  */
-export function decide(licence, min, today) {
-  const until = licence?.flags?.[`under_${min}_until`]
+export function decide(release, min, today) {
+  const name = `under_${min}_until`
+  const until = release?.passport?.[name] ?? release?.licence?.flags?.[name]
   if (!until) return 'unknown'
   return today >= until ? 'yes' : 'no'
 }

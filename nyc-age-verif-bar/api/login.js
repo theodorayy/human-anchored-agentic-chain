@@ -1,5 +1,5 @@
 // Starts a door check: an OIDC authorization-code + PKCE sign-in at FreeID
-// asking only for the licence age flags. `?min=18` or `?min=21` picks the
+// asking only for the passport and licence age flags. `?min=18` or `?min=21` picks the
 // threshold; it travels in the sealed flow cookie, never back through FreeID.
 import { createHash, randomBytes } from 'node:crypto'
 import {

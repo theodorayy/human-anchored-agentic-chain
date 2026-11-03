@@ -15,7 +15,7 @@ export const FLOW_COOKIE = 'bar_freeid'
 export const RESULT_COOKIE = 'bar_result'
 export const RESULT_COOKIE_PATH = '/api/result'
 
-// The only age thresholds the door checks; each maps to one licence age flag.
+// The only age thresholds the door checks; each maps to one age flag (passport, else licence).
 export const THRESHOLDS = [18, 21]
 
 // Failures reach the page as short codes only; the page maps each to fixed copy,
@@ -27,7 +27,7 @@ export const REASON_CODES = [
   'unavailable', // FreeID unreachable or no release returned
   'decrypt', // release not encrypted to our key
   'issuer', // not issued by FreeID / not a FreeID credential
-  'chip', // passport chip or app attestation not verified
+  'chip', // passport chip, face match or app attestation not verified
   'binding', // key binding: holder key, audience, nonce, freshness, sd_hash
   'fields', // unexpected, unrequested, duplicate, forged or malformed fields
   'licence_expired', // the licence in the credential has expired
@@ -39,8 +39,8 @@ export function failureLocation(code) {
   return `/?freeid=error&reason=${REASON_CODES.includes(code) ? code : 'error'}`
 }
 
-// Only the licence's age flags: never a name, a date of birth or a passport field.
-export const SCOPES = 'openid licence licence:age_flags'
+// Only the passport and licence age flags: never a name, a date of birth or any other field.
+export const SCOPES = 'openid passport passport:age_flags licence licence:age_flags'
 
 let discoveryCache
 export async function discovery() {

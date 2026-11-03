@@ -1,5 +1,5 @@
-// Verification of FreeID age-flag releases and the door's decision, with
-// synthetic credentials.
+// Verification of FreeID age-flag releases (passport and licence) and the
+// door's decision, with synthetic credentials.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPair } from 'jose'
@@ -34,14 +34,51 @@ const verify = (jwe, overrides = {}) =>
 
 async function decisionFor(min, tweak = {}, overrides = {}) {
   const release = await verify(await buildRelease(tweak), overrides)
-  return decide(release.licence, min, release.today)
+  return decide(release, min, release.today)
 }
 
 const flagsWith = (min, date) => ({ ...AGE_FLAGS, [`under_${min}_until`]: date })
 
 // The decision: today >= under_N_until → YES; before → NO; no flag → CAN'T CONFIRM.
+// The passport's flag is used when disclosed; otherwise the licence's.
 
 for (const min of [18, 21]) {
+  test(`${min}+ passport: a guest whose ${min}th birthday has passed is YES`, async () => {
+    assert.equal(await decisionFor(min, { passportFlags: flagsWith(min, addDays(TODAY, -1)) }), 'yes')
+  })
+
+  test(`${min}+ passport: a guest whose ${min}th birthday is today is YES`, async () => {
+    assert.equal(await decisionFor(min, { passportFlags: flagsWith(min, TODAY) }), 'yes')
+  })
+
+  test(`${min}+ passport: a guest whose ${min}th birthday is tomorrow is NO`, async () => {
+    assert.equal(await decisionFor(min, { passportFlags: flagsWith(min, addDays(TODAY, 1)) }), 'no')
+  })
+
+  test(`${min}+ passport: no under_${min}_until flag and no licence is CAN'T CONFIRM`, async () => {
+    const flags = { ...AGE_FLAGS }
+    delete flags[`under_${min}_until`]
+    assert.equal(await decisionFor(min, { passportFlags: flags }), 'unknown')
+  })
+
+  test(`${min}+ passport: signed flags the guest didn't share are CAN'T CONFIRM`, async () => {
+    assert.equal(await decisionFor(min, { passportFlags: AGE_FLAGS, disclosePassportFlags: [] }), 'unknown')
+  })
+
+  test(`${min}+ both: the passport's flag wins over the licence's`, async () => {
+    const past = flagsWith(min, addDays(TODAY, -1))
+    const future = flagsWith(min, addDays(TODAY, 1))
+    assert.equal(await decisionFor(min, { passportFlags: future, licence: { fields: past } }), 'no')
+    assert.equal(await decisionFor(min, { passportFlags: past, licence: { fields: future } }), 'yes')
+  })
+
+  test(`${min}+ both: the licence's flag decides when the passport lacks under_${min}_until`, async () => {
+    const passportFlags = { ...AGE_FLAGS }
+    delete passportFlags[`under_${min}_until`]
+    const fields = flagsWith(min, addDays(TODAY, 1))
+    assert.equal(await decisionFor(min, { passportFlags, licence: { fields } }), 'no')
+  })
+
   test(`${min}+: a guest whose ${min}th birthday has passed is YES`, async () => {
     assert.equal(await decisionFor(min, { licence: { fields: flagsWith(min, addDays(TODAY, -1)) } }), 'yes')
   })
@@ -79,9 +116,11 @@ for (const min of [18, 21]) {
 
 test('a 19-year-old is YES at 18+ and NO at 21+ from the same release', async () => {
   const fields = { under_18_until: addDays(TODAY, -400), under_19_until: addDays(TODAY, -35), under_21_until: addDays(TODAY, 695) }
-  const release = await verify(await buildRelease({ licence: { fields } }))
-  assert.equal(decide(release.licence, 18, release.today), 'yes')
-  assert.equal(decide(release.licence, 21, release.today), 'no')
+  for (const tweak of [{ licence: { fields } }, { passportFlags: fields }]) {
+    const release = await verify(await buildRelease(tweak))
+    assert.equal(decide(release, 18, release.today), 'yes')
+    assert.equal(decide(release, 21, release.today), 'no')
+  }
 })
 
 test('only the requested flag decides: under_18 alone cannot answer 21+', async () => {
@@ -93,11 +132,11 @@ test('only the requested flag decides: under_18 alone cannot answer 21+', async 
 test('"today" is the New York date, not UTC: 22:00 the night before a 21st is still NO', async () => {
   // 02:00 UTC on 17 Oct is 22:00 on 16 Oct in New York.
   const lateEvening = new Date('2026-10-17T02:00:00Z')
-  const tweak = { now: lateEvening, licence: { fields: flagsWith(21, '2026-10-17') } }
+  const tweak = { now: lateEvening, passportFlags: flagsWith(21, '2026-10-17') }
   assert.equal(await decisionFor(21, tweak, { now: lateEvening }), 'no')
   // 05:00 UTC on 17 Oct is 01:00 on 17 Oct in New York.
   const afterMidnight = new Date('2026-10-17T05:00:00Z')
-  const later = { now: afterMidnight, licence: { fields: flagsWith(21, '2026-10-17') } }
+  const later = { now: afterMidnight, passportFlags: flagsWith(21, '2026-10-17') }
   assert.equal(await decisionFor(21, later, { now: afterMidnight }), 'yes')
 })
 
@@ -106,20 +145,22 @@ test('localDate reads the calendar date in the given zone', () => {
   assert.equal(localDate(new Date('2026-10-17T02:00:00Z'), 'UTC'), '2026-10-17')
 })
 
-test('decide never says YES without the flag, and only knows 18 and 21', () => {
+test('decide never says YES without a flag, and only knows 18 and 21', () => {
   assert.equal(decide(null, 18, TODAY), 'unknown')
-  assert.equal(decide({ flags: {} }, 21, TODAY), 'unknown')
-  assert.equal(decide({ flags: { under_19_until: '2000-01-01' } }, 19.5, TODAY), 'unknown')
+  assert.equal(decide({ passport: {}, licence: null }, 18, TODAY), 'unknown')
+  assert.equal(decide({ passport: {}, licence: { flags: {} } }, 21, TODAY), 'unknown')
+  assert.equal(decide({ passport: { under_19_until: '2000-01-01' }, licence: null }, 19.5, TODAY), 'unknown')
 })
 
-test('a verified release returns only the licence verification and the flags', async () => {
-  const release = await verify(await buildRelease({ licence: {} }))
+test('a verified release returns only the passport flags, the licence verification and its flags', async () => {
+  const release = await verify(await buildRelease({ passportFlags: AGE_FLAGS, licence: {} }))
   assert.equal(release.vct, 'https://free-id.org/vct/identity/v1')
   assert.equal(release.today, TODAY)
+  assert.deepEqual(release.passport, AGE_FLAGS)
   assert.deepEqual(release.licence, { verification: LICENCE_VERIFICATION, flags: AGE_FLAGS })
 })
 
-// Nothing beyond the age flags may arrive, even if FreeID signed it.
+// Nothing beyond the age flags (and the licence container) may arrive, even if FreeID signed it.
 
 for (const [name, value] of [
   ['birthdate', '1998-03-14'],
@@ -142,13 +183,71 @@ test('an unknown licence field is rejected', async () => {
   })
 })
 
-for (const name of ['birthdate', 'given_name', 'document_number_masked']) {
-  test(`a release with the passport ${name} is rejected`, async () => {
-    await assert.rejects(verify(await buildRelease({ licence: {}, presentPassport: [name] })), {
+for (const name of ['birthdate', 'given_name', 'family_name', 'nationality', 'passport_expiry', 'document_number_masked']) {
+  test(`a release with the passport ${name} beside the passport age flags is rejected`, async () => {
+    await assert.rejects(verify(await buildRelease({ passportFlags: AGE_FLAGS, presentPassport: [name] })), {
       message: "Release includes a field that wasn't requested",
     })
   })
 }
+
+test('a release with a passport field beside the licence flags is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ licence: {}, presentPassport: ['birthdate'] })), {
+    message: "Release includes a field that wasn't requested",
+  })
+})
+
+test('an unknown signed passport field is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ passportFlags: { ...AGE_FLAGS, under_25_until: '2023-03-14' } })), {
+    message: 'Unexpected field',
+  })
+})
+
+test('a passport/v1 credential carrying a signed age flag is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ passportV1: true, passportFlags: { under_21_until: '2019-03-14' } })), {
+    message: 'Unexpected field',
+  })
+})
+
+test('a forged passport age flag disclosure is rejected', async () => {
+  const jwe = await buildRelease({
+    passportFlags: flagsWith(21, addDays(TODAY, 30)),
+    presented: (issuerJwt, disclosures) => {
+      const forged = disclosure('under_21_until', '2000-01-01')
+      const parts = disclosures.map((d) => (d.name === 'under_21_until' ? forged.encoded : d.encoded))
+      return [issuerJwt, ...parts].join('~') + '~kb.placeholder.sig'
+    },
+  })
+  await assert.rejects(verify(jwe), { message: 'Disclosure not signed by FreeID' })
+})
+
+test('an added passport age flag the credential never signed is rejected', async () => {
+  const jwe = await buildRelease({
+    passportFlags: { under_18_until: '2016-03-14' },
+    presented: (issuerJwt, disclosures) => {
+      const added = disclosure('under_21_until', '2000-01-01')
+      return [issuerJwt, ...disclosures.map((d) => d.encoded), added.encoded].join('~') + '~kb.placeholder.sig'
+    },
+  })
+  await assert.rejects(verify(jwe), { message: 'Disclosure not signed by FreeID' })
+})
+
+test('a duplicated passport age flag disclosure is rejected', async () => {
+  const jwe = await buildRelease({
+    passportFlags: AGE_FLAGS,
+    presented: (issuerJwt, disclosures) => {
+      const parts = [...disclosures.map((d) => d.encoded), disclosures[0].encoded]
+      return [issuerJwt, ...parts].join('~') + '~kb.placeholder.sig'
+    },
+  })
+  await assert.rejects(verify(jwe), { message: 'Duplicate disclosure' })
+})
+
+test('a passport age flag that is not a calendar date is rejected', async () => {
+  await assert.rejects(verify(await buildRelease({ passportFlags: { under_21_until: '2019-02-30' } })), {
+    message: 'Malformed disclosure',
+  })
+})
 
 test('a passport/v1 release with a passport field is rejected', async () => {
   await assert.rejects(verify(await buildRelease({ passportV1: true, presentPassport: ['birthdate'] })), {
@@ -156,7 +255,7 @@ test('a passport/v1 release with a passport field is rejected', async () => {
   })
 })
 
-test('a forged age flag disclosure is rejected', async () => {
+test('a forged licence age flag disclosure is rejected', async () => {
   const jwe = await buildRelease({
     licence: { fields: flagsWith(21, addDays(TODAY, 30)) },
     presented: (issuerJwt, disclosures) => {
@@ -309,7 +408,15 @@ test('an identity/v1 credential without exactly three top-level digests is rejec
 
 for (const check of ['passive_authentication', 'csca_chain', 'app_attest']) {
   test(`a credential with ${check} not true is rejected`, async () => {
-    await assert.rejects(verify(await buildRelease({ licence: {}, verification: { [check]: false } })), {
+    await assert.rejects(verify(await buildRelease({ passportFlags: AGE_FLAGS, verification: { [check]: false } })), {
+      message: 'Passport chip not verified',
+    })
+  })
+}
+
+for (const faceMatch of ['not_performed', 'failed', true]) {
+  test(`a credential with face_match ${JSON.stringify(faceMatch)} is rejected`, async () => {
+    await assert.rejects(verify(await buildRelease({ passportFlags: AGE_FLAGS, verification: { face_match: faceMatch } })), {
       message: 'Passport chip not verified',
     })
   })

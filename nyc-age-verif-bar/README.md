@@ -1,6 +1,6 @@
 # NYC age-verification bar: FreeID door check
 
-A mock relying party for FreeID: a bar door's age check. The bouncer taps **18+** or **21+**. FreeID's page shows a QR code, the guest scans it with the FreeID app and approves sharing their NYS licence age flags. The screen then shows a big green **YES**, a red **NO** or an amber **CAN'T CONFIRM**.
+A mock relying party for FreeID: a bar door's age check. The bouncer taps **18+** or **21+**. FreeID's page shows a QR code, the guest scans it with the FreeID app and approves sharing their age flags (from the passport, or the NYS licence). The screen then shows a big green **YES**, a red **NO** or an amber **CAN'T CONFIRM**.
 
 Production: https://nyc-age-verif-bar.vercel.app
 
@@ -8,25 +8,29 @@ It is built like `../nyc-fibre`: vanilla HTML, Vercel Node functions in `api/` a
 
 ## What it asks for and what it keeps
 
-- Scopes: `openid licence licence:age_flags`, and nothing else. No passport scope, no name and no date of birth.
-- The release may hold only the `nys_licence` container (identity/v1) and, inside it, `under_18_until`, `under_19_until` and `under_21_until`. If any other field arrives (a passport field, the licence birthdate, name, address or number), the whole release is refused, even when FreeID signed that field.
+- Scopes: `openid passport passport:age_flags licence licence:age_flags`, and nothing else. No name and no date of birth.
+- The release (identity/v1) may hold only:
+  - `under_18_until`, `under_19_until` and `under_21_until` among the passport disclosures (`passport._sd`);
+  - the `nys_licence` container and, inside it, the same three flags.
+
+  If any other field arrives (another passport field, the licence birthdate, name, address or number), the whole release is refused, even when FreeID signed that field.
 - Decision for threshold N, using `under_N_until`:
+  - the passport's flag is used if disclosed (chip-backed); otherwise the licence's;
   - today ≥ that date gives **YES** (the birthday itself counts);
   - otherwise **NO**;
-  - if the flag is missing, or no licence was shared at all, the answer is **CAN'T CONFIRM**. It is never YES.
+  - if neither source discloses the flag, the answer is **CAN'T CONFIRM**. It is never YES. A passport/v1 credential (old flat format) carries no age flags and no licence, so it is always CAN'T CONFIRM.
 - "Today" is the date in New York (`BAR_TIME_ZONE`, default `America/New_York`), not UTC. Under UTC, a guest turning 21 tomorrow would get YES from about 20:00 tonight.
 - Nothing is stored. The flag dates go no further than `api/callback.js`. The browser receives only `{ min, decision }`, in a sealed HttpOnly cookie that lasts 120 seconds and can be read once (`/api/result`).
-- The page shows "Age from NYS licence barcode — not verified by New York State" with every YES or NO. The barcode carries no issuer signature.
 - The bouncer has nothing to type or override. The only controls are 18+, 21+ and Next guest. `/api/login` accepts `min=18` or `min=21` and nothing else. The threshold lives in the sealed flow cookie, so FreeID never sees it and the callback cannot be steered to a different one.
 
 The release is verified like this:
 
 1. It is a JWE (ECDH-ES, A256GCM) encrypted to our `enc` key.
 2. The issuer JWT is ES256 from `https://api.free-id.org`, with `typ dc+sd-jwt` and vct passport/v1 or identity/v1.
-3. The passport chip and App Attest checks are true.
+3. The passport `verification` block has `passive_authentication`, `csca_chain` and `app_attest` true and `face_match` `matched`.
 4. identity/v1 has exactly 3 top-level digests.
-5. Every disclosure matches a signed digest at the right level.
-6. The container's `verification` block is exactly what the contract specifies, and `valid_until` is not in the past.
+5. Every disclosure matches a signed digest at the right level: passport flags in `passport._sd`, the container at the top level, licence flags in the container's `_sd`.
+6. If the licence container is disclosed, its `verification` block is exactly what the contract specifies, and `valid_until` is not in the past.
 7. The KB-JWT is EdDSA, signed by the `cnf` key, with `aud` = our client id, our `nonce`, ≤ 5 minutes old and a matching `sd_hash`.
 
 ## Outcomes and reason codes
@@ -41,7 +45,7 @@ Any rejected or failed check redirects to `/?freeid=error&reason=<code>`, and th
 | `unavailable` | FreeID couldn't be reached, or no release came back |
 | `decrypt` | The release wasn't encrypted to our key |
 | `issuer` | The credential wasn't issued by FreeID, or has the wrong shape |
-| `chip` | The passport chip or App Attest check isn't verified |
+| `chip` | The passport chip, face match or App Attest check isn't verified |
 | `binding` | The KB-JWT failed: holder key, aud, nonce, freshness or sd_hash |
 | `fields` | An unrequested, unknown, forged, duplicate or malformed disclosure |
 | `licence_expired` | The licence's `valid_until` has passed |
@@ -71,7 +75,7 @@ Add each one to the Vercel project (Production), e.g. `vercel env add BAR_PRIVAT
 
 ## FreeID client registration it needs
 
-The FreeID auth server needs this entry in `apps/auth-server/src/modules/oidc/services/client.service.ts`. As of 2026-11-02 it is already present in the `free-identity-passport-wt` worktree, and the scope is listed in `oidc/constants`.
+The FreeID auth server needs this entry in `apps/auth-server/src/modules/oidc/services/client.service.ts`. Its `allowedScopes` must include both the passport and the licence age-flag scopes, and each scope must be listed in `oidc/constants`.
 
 ```ts
 [
@@ -82,15 +86,16 @@ The FreeID auth server needs this entry in `apps/auth-server/src/modules/oidc/se
     clientUri: 'https://nyc-age-verif-bar.vercel.app',
     jwksUri: 'https://nyc-age-verif-bar.vercel.app/.well-known/jwks.json',
     redirectUris: ['https://nyc-age-verif-bar.vercel.app/api/callback'],
-    allowedScopes: ['openid', 'licence', 'licence:age_flags'],
+    allowedScopes: ['openid', 'passport', 'passport:age_flags', 'licence', 'licence:age_flags'],
   },
 ],
 ```
 
-FreeID must also support the following, from the NYS licence contract:
+FreeID must also support:
 
-- a licence-only release, where the `licence` umbrella alone makes `/authorize` a release;
-- the `licence:age_flags` → `licence.under_{18,19,21}_until` mapping.
+- a release where the `passport` or the `licence` umbrella alone makes `/authorize` a release;
+- the `passport:age_flags` → `passport.under_{18,19,21}_until` mapping, disclosed in `passport._sd` like any other passport field;
+- from the NYS licence contract, the `licence:age_flags` → `licence.under_{18,19,21}_until` mapping.
 
 ## Deploy
 
@@ -108,10 +113,11 @@ npm test
 
 The tests use synthetic credentials (`test/fixtures.js`, adapted from NYC Fibre's builder). They cover:
 
-- YES, NO and CAN'T CONFIRM at 18+ and 21+, including a birthday today and tomorrow;
+- YES, NO and CAN'T CONFIRM at 18+ and 21+, including a birthday today and tomorrow, for passport only, licence only, both (the passport wins) and neither;
 - the New York vs UTC boundary;
-- rejection of extra licence fields and of passport fields;
-- forged or added disclosures and a forged container;
+- rejection of other passport fields and other licence fields;
+- forged, added or duplicated passport and licence flags, and a forged container;
+- passport chip, App Attest and face match checks;
 - the wrong nonce or aud, a stale or altered presentation, and the wrong keys;
 - an expired licence;
 - the full login, callback and result flow against a stand-in FreeID;

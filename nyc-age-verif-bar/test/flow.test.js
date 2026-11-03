@@ -6,7 +6,7 @@ import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { SignJWT, jwtVerify, importJWK } from 'jose'
 import { AGE_FLAGS, addDays, buildRelease, k } from './fixtures.js'
-import { LICENCE_SOURCE_LABEL, localDate } from '../api/_verify.js'
+import { localDate } from '../api/_verify.js'
 
 let server
 let issuer
@@ -120,10 +120,10 @@ function decodedCookies(response) {
   })
 }
 
-test('login asks only for the licence age flags, with PKCE and a nonce, and keeps the threshold to itself', async () => {
+test('login asks only for the passport and licence age flags, with PKCE and a nonce, and keeps the threshold to itself', async () => {
   for (const min of [18, 21]) {
     const { authorize } = await startLogin(min)
-    assert.equal(authorize.searchParams.get('scope'), 'openid licence licence:age_flags')
+    assert.equal(authorize.searchParams.get('scope'), 'openid passport passport:age_flags licence licence:age_flags')
     assert.equal(authorize.searchParams.get('client_id'), 'nyc-age-verif-bar')
     assert.equal(authorize.searchParams.get('redirect_uri'), 'https://nyc-age-verif-bar.vercel.app/api/callback')
     assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256')
@@ -154,7 +154,7 @@ test('the JWKS publishes the signing and encryption public keys only', async () 
 })
 
 test('18+: an adult is YES; the browser gets only the threshold and the decision, once', async () => {
-  const { callback, result, body } = await check(18, { licence: {} })
+  const { callback, result, body } = await check(18, { passportFlags: AGE_FLAGS, licence: {} })
   assert.deepEqual(body, { min: 18, decision: 'yes' })
   assert.equal(freeid.tokenRequest.get('grant_type'), 'authorization_code')
   assert.ok(freeid.tokenRequest.get('code_verifier'))
@@ -179,22 +179,47 @@ test('the result cookie is cleared after one read', async () => {
   assert.equal(after.status, 404)
 })
 
-test('21+: a guest turning 21 today is YES', async () => {
+test('21+ passport only: a guest turning 21 today is YES', async () => {
+  const passportFlags = { ...AGE_FLAGS, under_21_until: today() }
+  assert.deepEqual((await check(21, { passportFlags })).body, { min: 21, decision: 'yes' })
+})
+
+test('21+ passport only: a guest turning 21 tomorrow is NO', async () => {
+  const passportFlags = { ...AGE_FLAGS, under_21_until: addDays(today(), 1) }
+  assert.deepEqual((await check(21, { passportFlags })).body, { min: 21, decision: 'no' })
+})
+
+test('18+ passport only: a guest turning 18 tomorrow is NO', async () => {
+  const passportFlags = { under_18_until: addDays(today(), 1), under_19_until: addDays(today(), 366), under_21_until: addDays(today(), 1097) }
+  assert.deepEqual((await check(18, { passportFlags })).body, { min: 18, decision: 'no' })
+})
+
+test('both sources: the passport flag wins over the licence flag', async () => {
+  const passportFlags = { ...AGE_FLAGS, under_21_until: addDays(today(), 1) }
+  assert.deepEqual((await check(21, { passportFlags, licence: {} })).body, { min: 21, decision: 'no' })
+  const licenceFields = { ...AGE_FLAGS, under_21_until: addDays(today(), 1) }
+  assert.deepEqual((await check(21, { passportFlags: AGE_FLAGS, licence: { fields: licenceFields } })).body, {
+    min: 21,
+    decision: 'yes',
+  })
+})
+
+test('21+ licence only: a guest turning 21 today is YES', async () => {
   const fields = { ...AGE_FLAGS, under_21_until: today() }
   assert.deepEqual((await check(21, { licence: { fields } })).body, { min: 21, decision: 'yes' })
 })
 
-test('21+: a guest turning 21 tomorrow is NO', async () => {
+test('21+ licence only: a guest turning 21 tomorrow is NO', async () => {
   const fields = { ...AGE_FLAGS, under_21_until: addDays(today(), 1) }
   assert.deepEqual((await check(21, { licence: { fields } })).body, { min: 21, decision: 'no' })
 })
 
-test('18+: a guest turning 18 tomorrow is NO', async () => {
+test('18+ licence only: a guest turning 18 tomorrow is NO', async () => {
   const fields = { under_18_until: addDays(today(), 1), under_19_until: addDays(today(), 366), under_21_until: addDays(today(), 1097) }
   assert.deepEqual((await check(18, { licence: { fields } })).body, { min: 18, decision: 'no' })
 })
 
-test("no licence shared is CAN'T CONFIRM, never YES", async () => {
+test("neither source shared is CAN'T CONFIRM, never YES", async () => {
   assert.deepEqual((await check(21)).body, { min: 21, decision: 'unknown' })
   assert.deepEqual((await check(18, { passportV1: true })).body, { min: 18, decision: 'unknown' })
 })
@@ -217,8 +242,18 @@ test('a release with a field beyond the age flags is refused with a reason code'
 })
 
 test('a release with a passport field is refused', async () => {
-  const { callback } = await check(18, { licence: {}, presentPassport: ['given_name'] })
+  const { callback } = await check(18, { passportFlags: AGE_FLAGS, presentPassport: ['given_name'] })
   assert.equal(reasonOf(callback), 'fields')
+})
+
+test('a release with a licence field beside the passport flags is refused', async () => {
+  const { callback } = await check(18, { passportFlags: AGE_FLAGS, licence: { fields: { ...AGE_FLAGS, address: { region: 'NY' } } } })
+  assert.equal(reasonOf(callback), 'fields')
+})
+
+test('a credential without a matched face is refused', async () => {
+  const { callback } = await check(21, { passportFlags: AGE_FLAGS, verification: { face_match: 'not_performed' } })
+  assert.equal(reasonOf(callback), 'chip')
 })
 
 test('a release bound to another check is refused', async () => {
@@ -282,9 +317,8 @@ test('the only controls are 18+, 21+ and Next guest; nothing can be typed', () =
   assert.ok(script.includes("button.dataset.min === '21' ? '21' : '18'"), 'the page only ever sends 18 or 21')
 })
 
-test('the page shows the source note and never reads a released value', () => {
-  assert.ok(script.includes(`const LICENCE_SOURCE_LABEL = ${JSON.stringify(LICENCE_SOURCE_LABEL)}`))
-  assert.equal(LICENCE_SOURCE_LABEL, 'Age from NYS licence barcode — not verified by New York State')
+test('the page shows no source label and never reads a released value', () => {
+  assert.ok(!/LICENCE_SOURCE_LABEL|source-note|not verified by New York State/.test(html))
   assert.ok(!/under_\d+_until|birthdate|given_name|family_name/.test(script))
   assert.ok(!/innerHTML|insertAdjacentHTML|document\.write/.test(script), 'text only')
 })
