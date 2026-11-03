@@ -76,7 +76,6 @@
 <main>
   <section id="start">
     <h1>Door check</h1>
-    <p class="prompt">Choose the age to check. The guest approves on their FreeID app.</p>
     <div class="choices">
       <button type="button" class="choice" data-min="18">18+</button>
       <button type="button" class="choice" data-min="21">21+</button>
@@ -108,9 +107,9 @@
   // Fixed copy for every outcome; nothing from the URL or any released value is ever rendered.
   const LICENCE_SOURCE_LABEL = "Age from NYS licence barcode — not verified by New York State"
   const VERDICTS = {
-    yes: { word: 'YES', detail: 'Old enough.' },
-    no: { word: 'NO', detail: 'Not old enough.' },
-    unknown: { word: "CAN'T CONFIRM", detail: 'No age from a licence was shared. Check ID by hand.' },
+    yes: { word: 'YES', detail: '' },
+    no: { word: 'NO', detail: '' },
+    unknown: { word: "CAN'T CONFIRM", detail: '' },
   }
   // Fixed copy for the reason codes /api/callback sends.
   const REASONS = {
