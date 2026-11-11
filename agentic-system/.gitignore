@@ -43,3 +43,6 @@ playwright-report/
 test-results/
 !.env.example
 .vercel/
+
+# provider keys
+.openai.env

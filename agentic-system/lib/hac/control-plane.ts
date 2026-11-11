@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { transaction } from "./store"
-import { audit, evaluate, mandateInput, browserAction, signGrant, targetUrl, actionLabel } from "./policy"
+import { audit, evaluate, mandateInput, browserAction, signGrant, targets, actionLabel } from "./policy"
 import type { Principal, Run } from "./types"
 
 export class HttpError extends Error {
@@ -16,14 +16,19 @@ export function createMandate(principal: Principal, input: unknown) {
   return transaction(state => {
     const id = randomUUID(), createdAt = new Date().toISOString()
     const expiresAt = new Date(Date.now() + parsed.durationHours * 3_600_000).toISOString()
-    const origin = new URL(targetUrl()).origin
+    const sites = targets()
+    const requested = parsed.origins ?? [sites[0].origin]
+    const origins = sites.filter(t => requested.includes(t.origin)).map(t => t.origin)
+    if (origins.length !== new Set(requested).size) throw new HttpError(400, "A requested website is not available for tasks.")
+    const origin = origins[0]
+    const scope = { action: "browser:use" as const, origin, ...(origins.length > 1 ? { origins } : {}), maxActions: parsed.maxActions, requireApproval: parsed.requireApproval }
     const grant = signGrant({ id: randomUUID(), parentId: null, mandateId: id, principalId: principal.id,
-      agent: "root", scope: { action: "browser:use", origin, maxActions: parsed.maxActions, requireApproval: parsed.requireApproval }, expiresAt }, state.signingKey)
+      agent: "root", scope, expiresAt }, state.signingKey)
     const mandate = { id, principalId: principal.id, title: parsed.title, accountableParty: "Principal · personal capacity",
       maxActions: parsed.maxActions, usedActions: 0, requireApproval: parsed.requireApproval,
-      origin, createdAt, expiresAt, revokedAt: null, grant }
+      origin, ...(origins.length > 1 ? { origins } : {}), createdAt, expiresAt, revokedAt: null, grant }
     state.mandates.push(mandate)
-    audit(state, { principalId: principal.id, mandateId: id, actor: "Principal", event: "mandate.created", detail: `Granted ${parsed.maxActions} browser actions at ${origin}. Interactions ${parsed.requireApproval ? "require approval" : "are pre-authorized"}.` })
+    audit(state, { principalId: principal.id, mandateId: id, actor: "Principal", event: "mandate.created", detail: `Granted ${parsed.maxActions} browser actions at ${origins.join(", ")}. Interactions ${parsed.requireApproval ? "require approval" : "are pre-authorized"}.` })
     return mandate
   })
 }

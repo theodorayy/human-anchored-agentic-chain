@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import { requirePrincipal, requireSameOrigin, demoSession, logout, demoAvailable, oidcAvailable, eveAvailable, appUrl, cookieHeader } from "@/lib/hac/auth"
 import { beginLogin, finishLogin } from "@/lib/hac/oidc"
 import { createMandate, revokeMandate, deleteTask, delegateBrowser, dispatchBrowser, reviewRun, HttpError } from "@/lib/hac/control-plane"
-import { targetUrl, identityProviderOrigins } from "@/lib/hac/policy"
+import { targetUrl, targets, identityProviderOrigins } from "@/lib/hac/policy"
 import { transaction } from "@/lib/hac/store"
 import { auditForPrincipal } from "@/lib/hac/audit"
 import { serverlessHost } from "@/lib/hac/deployment"
@@ -27,14 +27,14 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
       if (path === "state") {
         const principal = requirePrincipal(request)
         if (serverlessHost()) return publicJson({ principal, mandates: [], runs: [], audit: [], sessions: [],
-          demoAvailable: false, oidcAvailable: oidcAvailable(), eveAvailable: false, runtimeAvailable: false, targetUrl: targetUrl(), identityProviderOrigins: identityProviderOrigins() })
+          demoAvailable: false, oidcAvailable: oidcAvailable(), eveAvailable: false, runtimeAvailable: false, targetUrl: targetUrl(), targets: targets(), identityProviderOrigins: identityProviderOrigins() })
         const data = transaction(state => ({
           mandates: state.mandates.filter(m => m.principalId === principal?.id),
           runs: state.runs.filter(r => r.principalId === principal?.id).slice(-100).reverse(),
           audit: auditForPrincipal(state, principal.id).slice(-200).reverse(),
           sessions: state.eveSessions.filter(s => s.principalId === principal?.id).map(s => ({ id: s.id, mandateId: s.mandateId, title: s.title })),
         }))
-        return publicJson({ ...data, observedAt: Date.now(), principal, demoAvailable: demoAvailable(), oidcAvailable: oidcAvailable(), eveAvailable: eveAvailable(), runtimeAvailable: true, targetUrl: targetUrl(), identityProviderOrigins: identityProviderOrigins() })
+        return publicJson({ ...data, observedAt: Date.now(), principal, demoAvailable: demoAvailable(), oidcAvailable: oidcAvailable(), eveAvailable: eveAvailable(), runtimeAvailable: true, targetUrl: targetUrl(), targets: targets(), identityProviderOrigins: identityProviderOrigins() })
       }
     }
     if (serverlessHost()) {

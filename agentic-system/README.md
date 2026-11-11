@@ -14,7 +14,7 @@ pnpm setup:local
 pnpm exec playwright install chromium
 ```
 
-`setup:local` creates `.env.local`, generates a private P-256 RP signing key, and preserves existing values. The key is never committed. Add `AI_GATEWAY_API_KEY` to `.env.local` to enable live Eve model calls. `EVE_MODEL` and `EVE_BROWSER_MODEL` select the root and vision-capable worker models. Without a key, sign-in, mandates, browser preview, enforcement, and audit still work; chat clearly reports that the model is offline.
+`setup:local` creates `.env.local`, generates a private P-256 RP signing key, and preserves existing values. The key is never committed. Add `OPENAI_API_KEY` to `.env.local` to enable live Eve model calls. Both agents use OpenAI `gpt-6.1-sol`, set in `agent/agent.ts` and `agent/subagents/browser_worker/agent.ts` (eve fixes the model at build time). Without a key, sign-in, mandates, browser preview, enforcement, and audit still work; chat clearly reports that the model is offline.
 
 Start FreeID's databases (Docker must be running):
 
@@ -135,7 +135,7 @@ or browser authority are stored in these cookies.
 
 Authenticated visitors can open the workspace and architecture view. The Fly
 runtime enables mandates, browser execution, and persisted audit. Model-driven
-chat additionally requires `AI_GATEWAY_API_KEY` on Fly. If the runtime proxy is
+chat additionally requires `OPENAI_API_KEY` on Fly. If the runtime proxy is
 not configured, Vercel can still serve authenticated identity and the workspace,
 with execution routes closed. Test identity entry is disabled in production.
 

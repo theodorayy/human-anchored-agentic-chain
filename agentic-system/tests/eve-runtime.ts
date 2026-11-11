@@ -25,7 +25,7 @@ const mandate = createMandate(principal, { title: "Runtime integration test", ma
 const cookie = createSession(principal).split(";")[0]
 let logs = ""
 const child = spawn(process.execPath, [resolve("node_modules/eve/bin/eve.js"), "dev", "--no-ui", "--host", "127.0.0.1", "--port", "3017"], {
-  cwd: fixture, env: { ...process.env, AI_GATEWAY_API_KEY: "fixture-only-no-provider-calls", HAC_DATA_DIR: resolve(process.env.HAC_DATA_DIR || ".hac"), PATH: `${dirname(process.execPath)}:${process.env.PATH}` }, stdio: ["ignore", "pipe", "pipe"],
+  cwd: fixture, env: { ...process.env, OPENAI_API_KEY: "fixture-only-no-provider-calls", HAC_DATA_DIR: resolve(process.env.HAC_DATA_DIR || ".hac"), PATH: `${dirname(process.execPath)}:${process.env.PATH}` }, stdio: ["ignore", "pipe", "pipe"],
 })
 child.stdout.on("data", b => { logs = (logs + b.toString()).slice(-12000) })
 child.stderr.on("data", b => { logs = (logs + b.toString()).slice(-12000) })

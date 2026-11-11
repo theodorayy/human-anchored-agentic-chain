@@ -21,4 +21,4 @@ if (missing.length) writeFileSync(file, current + "\n" + missing.map(([k, v]) =>
 chmodSync(file, 0o600)
 console.log("Local configuration ready. Existing values preserved; private key stays in .env.local.")
 console.log("HAC: http://localhost:3003 · FreeID issuer: http://localhost:3006")
-console.log("Add AI_GATEWAY_API_KEY to .env.local to enable Eve model calls.")
+console.log("Add OPENAI_API_KEY to .env.local to enable Eve model calls.")

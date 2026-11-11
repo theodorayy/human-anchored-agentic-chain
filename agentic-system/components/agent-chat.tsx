@@ -1,6 +1,8 @@
 "use client"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useEveAgent } from "eve/react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { RiArrowUpLine, RiStopFill, RiArrowRightUpLine, RiLoader4Line, RiShieldCheckLine, RiGlobalLine, RiHome4Line } from "@remixicon/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +12,7 @@ import type { Mandate, Snapshot } from "@/lib/hac/types"
 import { HillMark } from "./hill-mark"
 import { PauseIcon } from "./pause-icon"
 
-export type TaskPermissions = { title: string; maxActions: number; durationHours: number; requireApproval: boolean }
+export type TaskPermissions = { title: string; maxActions: number; durationHours: number; requireApproval: boolean; origins: string[] }
 export type Continuation = { id: string; message: string }
 type Props = {
   snapshot: Snapshot; mandateId: string; sessionId?: string;
@@ -24,6 +26,8 @@ const consumedContinuations = new Set<string>()
 export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation }: Props) {
   const [message, setMessage] = useState("")
   const [confirmTask, setConfirmTask] = useState("")
+  // Websites preselected by a starter; null means every configured website.
+  const [starterSites, setStarterSites] = useState<string[] | null>(null)
   const [starting, setStarting] = useState(false)
   const [sendError, setSendError] = useState("")
   const credentials = useRef({ mandateId, title: "" })
@@ -99,6 +103,7 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       await agent.send(task).catch(() => { setMessage(task) })
     } finally { setStarting(false) }
   }
+  const sites = snapshot.targets?.length ? snapshot.targets : [{ name: "NYC Fibre", url: snapshot.targetUrl, origin: new URL(snapshot.targetUrl).origin }]
   const status = authorityEnded ? "Permissions ended" : awaitingApproval ? "Your approval is needed" : agent.error ? "Sisyphus encountered a problem" : working ? "Sisyphus is working" : "Sisyphus is waiting for you"
   const detail = authorityEnded ? "Start a new task to grant fresh permissions." : awaitingApproval ? "Review the proposed action in Task details. Approve & continue resumes Sisyphus automatically." : working ? "Browser actions and their results appear in Task details and Audit log." : "Read Sisyphus’s response below, or send a follow-up."
   return <div className="chat-view">
@@ -115,12 +120,12 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
         <p>Tell Sisyphus what’s happening in your life.<br/>You’ll confirm its permissions before it starts.</p>
         <div className="task-steps"><span>1. Describe the task</span><span>2. Set permissions</span><span>3. Follow the work</span></div>
         <div className="suggestions">
-          {[{ title: "I’m moving to New York", text: "I’m moving to New York next month as an international student. What admin do I need to sort out?", icon: RiGlobalLine }, { title: "Set up home internet", text: "Set up home internet with NYC Fibre at 2 West Loop Road, Apt 14C, New York 10044. 1 Gig plan, email maria.santos@example.com, phone (212) 555-0142, earliest installation date. I don’t have an SSN.", icon: RiHome4Line }].map(s => <button key={s.title} className="sy-card" onClick={() => setMessage(s.text)}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
+          {[{ title: "I’m moving to New York", text: "I’m moving to New York next month as an international student. What admin do I need to sort out?", icon: RiGlobalLine, sites: null }, { title: "Set up home internet", text: "Set up home internet with NYC Fibre at 2 West Loop Road, Apt 14C, New York 10044. 1 Gig plan, email maria.santos@example.com, phone (212) 555-0142, earliest installation date. I don’t have an SSN.", icon: RiHome4Line, sites: ["NYC Fibre"] }].map(s => <button key={s.title} className="sy-card" onClick={() => { setMessage(s.text); setStarterSites(s.sites) }}><s.icon size={20}/><span>{s.title}</span><RiArrowRightUpLine size={16}/></button>)}
         </div>
-        <div className="welcome-target">Website <a href={snapshot.targetUrl} target="_blank" rel="noreferrer">NYC Fibre <RiArrowRightUpLine size={12}/></a></div>
+        <div className="welcome-target">{sites.length > 1 ? "Websites" : "Website"} {sites.map(t => <a key={t.origin} href={t.url} target="_blank" rel="noreferrer">{t.name} <RiArrowRightUpLine size={12}/></a>)}</div>
       </div> : <div className="messages">{agent.data.messages.map(m => <article key={m.id} className={`message ${m.role}`}>
         <div className="message-author">{m.role === "assistant" ? <><i aria-hidden="true"/> Sisyphus</> : "You"}</div>
-        {m.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{part.text}</div> : part.type === "dynamic-tool" ? <details key={index} className="tool-event"><summary>{part.toolName === "browser_worker" ? "Browser task" : part.toolName === "inspect_mandate" ? "Permission check" : part.toolName.replaceAll("_", " ")}<small>{part.state === "output-available" ? "Response received" : part.state === "output-error" ? "Failed" : "In progress"}</small></summary><p>Individual browser actions and policy decisions are recorded in the Audit log.</p></details> : null)}
+        {m.parts.map((part, index) => part.type === "text" ? (m.role === "assistant" ? <div key={index} className="message-text markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>{part.text}</ReactMarkdown></div> : <div key={index} className="message-text">{part.text}</div>) : part.type === "dynamic-tool" ? <details key={index} className="tool-event"><summary>{part.toolName === "browser_worker" ? "Browser task" : part.toolName === "inspect_mandate" ? "Permission check" : part.toolName.replaceAll("_", " ")}<small>{part.state === "output-available" ? "Response received" : part.state === "output-error" ? "Failed" : "In progress"}</small></summary><p>Individual browser actions and policy decisions are recorded in the Audit log.</p></details> : null)}
       </article>)}<div ref={end}/></div>}
     </div>
     <div className="composer-wrap">
@@ -133,12 +138,14 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
       <p className="composer-footnote">{currentSession ? "Sisyphus can act only within the permissions you granted." : "Nothing runs until you confirm the task and permissions."}</p>
     </div>
     <Dialog open={!!confirmTask} onOpenChange={open => { if (!open && !starting) setConfirmTask("") }}><DialogContent><DialogHeader><DialogTitle>Confirm task & permissions</DialogTitle><DialogDescription>These permissions apply to this task. You can stop access at any time.</DialogDescription></DialogHeader>
-      <form className="mandate-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); void startTask({ title: confirmTask.slice(0, 100), maxActions: Number(data.get("maxActions")), durationHours: Number(data.get("durationHours")), requireApproval: data.get("approval") === "ask" }) }}>
+      <form className="mandate-form" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); const origins = sites.length > 1 ? data.getAll("site").map(String) : [sites[0].origin]; if (!origins.length) { setSendError("Choose at least one website."); return } void startTask({ title: confirmTask.slice(0, 100), maxActions: Number(data.get("maxActions")), durationHours: Number(data.get("durationHours")), requireApproval: data.get("approval") === "ask", origins }) }}>
         <div className="task-confirmation"><Label>Task</Label><p>{confirmTask}</p></div>
-        <div className="scope-preview"><RiGlobalLine size={16}/><span>{new URL(snapshot.targetUrl).hostname} only</span></div>
+        {sites.length > 1 ? <fieldset className="permission-options site-options"><legend>Websites</legend>
+          {sites.map(t => <label key={t.origin}><input type="checkbox" name="site" value={t.origin} defaultChecked={!starterSites || starterSites.includes(t.name)}/><span><strong>{t.name}</strong><small>{new URL(t.url).hostname}</small></span></label>)}
+        </fieldset> : <div className="scope-preview"><RiGlobalLine size={16}/><span>{new URL(sites[0].url).hostname} only</span></div>}
         <fieldset className="permission-options"><legend>How much may Sisyphus do?</legend>
           <label><input type="radio" name="approval" value="ask" defaultChecked/><span><strong>Ask before each click</strong><small>Sisyphus can open and read pages, and type the details you give it. You approve each click.</small></span></label>
-          <label><input type="radio" name="approval" value="allow"/><span><strong>Let Sisyphus complete the task</strong><small>Allow clicks, typing, and submissions on this website without asking each time.</small></span></label>
+          <label><input type="radio" name="approval" value="allow"/><span><strong>Let Sisyphus complete the task</strong><small>Allow clicks, typing, and submissions on {sites.length > 1 ? "these websites" : "this website"} without asking each time.</small></span></label>
         </fieldset>
         <div className="form-pair"><div><Label htmlFor="task-action-limit">Maximum browser actions</Label><Input id="task-action-limit" name="maxActions" type="number" min={1} max={200} defaultValue={100} required/></div><div><Label htmlFor="task-duration">Access lasts (hours)</Label><Input id="task-duration" name="durationHours" type="number" min={1} max={24} defaultValue={1} required/></div></div>
         {sendError && <p className="inline-error" role="alert">{sendError}</p>}

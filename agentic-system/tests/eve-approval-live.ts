@@ -11,7 +11,7 @@ import { revokeMandate } from "../lib/hac/control-plane"
 import { transaction } from "../lib/hac/store"
 
 assert.equal(process.env.HAC_LIVE_APPROVAL_TEST, "1", "Set HAC_LIVE_APPROVAL_TEST=1 to run this live model test.")
-assert.ok(process.env.AI_GATEWAY_API_KEY, "A model connection is required.")
+assert.ok(process.env.OPENAI_API_KEY, "A model connection is required.")
 const principal = { id: `approval-smoke:${randomUUID()}`, name: "Approval smoke test", provider: "oidc" as const }
 const cookie = createSession(principal).split(";")[0]
 const host = process.env.HAC_TEST_URL || process.env.APP_URL || "http://localhost:3003"

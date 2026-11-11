@@ -8,7 +8,7 @@ import { openCookie, sealCookie } from "./sealed-cookie"
 export const sessionCookie = "hac_session"
 export const demoAvailable = () => !serverlessHost() && process.env.HAC_DEMO === "true"
 export const oidcAvailable = () => Boolean(process.env.OIDC_ISSUER && process.env.OIDC_CLIENT_ID && (!sealedSessions() || process.env.HAC_SESSION_SECRET))
-export const eveAvailable = () => !serverlessHost() && Boolean(process.env.AI_GATEWAY_API_KEY)
+export const eveAvailable = () => !serverlessHost() && Boolean(process.env.OPENAI_API_KEY)
 export const appUrl = () => process.env.APP_URL || "http://localhost:3003"
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 

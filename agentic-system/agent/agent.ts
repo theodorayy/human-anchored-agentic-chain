@@ -1,6 +1,9 @@
+import { openai } from "@ai-sdk/openai"
 import { defineAgent } from "eve"
 
+// eve fixes the model at build time, so it is set here rather than from the environment.
+// The runtime needs OPENAI_API_KEY.
 export default defineAgent({
-  model: process.env.EVE_MODEL || "anthropic/claude-sonnet-5.5",
+  model: openai("gpt-6.1-sol"),
   defaultTools: false,
 })

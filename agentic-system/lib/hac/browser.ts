@@ -3,7 +3,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises"
 import { resolve, join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { claimExecution, checkCurrentAuthority, completeExecution, HttpError } from "./control-plane"
-import { identityProviderOrigins } from "./policy"
+import { identityProviderOrigins, scopeOrigins } from "./policy"
 import type { Run } from "./types"
 
 type Worker = { browser: Browser; context: BrowserContext; page: Page; mandateId: string; principalId: string; timer: NodeJS.Timeout; busy: boolean; currentRun: Run }
@@ -41,7 +41,7 @@ async function getWorker(run: Run) {
         checkCurrentAuthority(active.currentRun)
         const request = route.request()
         const origin = new URL(request.url()).origin
-        if (origin !== active.currentRun.delegation.scope.origin) {
+        if (!scopeOrigins(active.currentRun.delegation.scope).includes(origin)) {
           // An identity provider is reachable only as the top-level page: a main-frame navigation
           // (each redirect hop is routed separately), or a main-frame request made while the page
           // is already on an identity-provider origin. Sub-frames and target-origin documents never reach it.
@@ -88,7 +88,7 @@ export async function executeBrowser(runId: string, capability: string) {
     if (action.kind === "navigate") await page.goto(action.url, { waitUntil: "domcontentloaded", timeout: 25_000 })
     else {
       const pageOrigin = new URL(page.url()).origin
-      if (pageOrigin !== run.delegation.scope.origin) {
+      if (!scopeOrigins(run.delegation.scope).includes(pageOrigin)) {
         if (!identityProviderOrigins().includes(pageOrigin)) throw new Error("Browser is outside its delegated origin.")
         if (["click", "type", "press"].includes(action.kind)) throw new Error("Identity provider pages are view-only for the agent")
       }
@@ -118,7 +118,7 @@ export async function executeBrowser(runId: string, capability: string) {
     await mkdir(resolve(/* turbopackIgnore: true */ process.env.HAC_DATA_DIR || ".hac", "screenshots"), { recursive: true, mode: 0o700 })
     await writeFile(artifactPath(screenshotId), screenshot, { mode: 0o600 })
     const finalOrigin = new URL(page.url()).origin
-    const moved = finalOrigin !== run.delegation.scope.origin && identityProviderOrigins().includes(finalOrigin) && ["click", "press"].includes(action.kind)
+    const moved = !scopeOrigins(run.delegation.scope).includes(finalOrigin) && identityProviderOrigins().includes(finalOrigin) && ["click", "press"].includes(action.kind)
     const note = moved ? `The page moved to the identity provider ${finalOrigin}, which is view-only for the agent.\n` : ""
     const result = completeExecution(run.id, { screenshotId, pageUrl: page.url(), pageTitle: await page.title(),
       observation: (note + await page.locator("body").innerText()).slice(0, 12_000) })

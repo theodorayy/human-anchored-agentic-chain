@@ -1,5 +1,5 @@
 export type Principal = { id: string; name: string; provider: "demo" | "oidc" }
-export type Scope = { action: "browser:use"; origin: string; maxActions: number; requireApproval: boolean }
+export type Scope = { action: "browser:use"; origin: string; origins?: string[]; maxActions: number; requireApproval: boolean }
 export type Grant = {
   id: string; parentId: string | null; mandateId: string; principalId: string;
   agent: "root" | "browser-worker"; scope: Scope; expiresAt: string; signature: string;
@@ -7,7 +7,7 @@ export type Grant = {
 export type Mandate = {
   id: string; principalId: string; title: string; accountableParty: string;
   maxActions: number; usedActions: number; requireApproval: boolean;
-  origin: string; createdAt: string; expiresAt: string; revokedAt: string | null; grant: Grant;
+  origin: string; origins?: string[]; createdAt: string; expiresAt: string; revokedAt: string | null; grant: Grant;
 }
 export type BrowserAction =
   | { kind: "navigate"; url: string }
@@ -40,6 +40,6 @@ export type Snapshot = {
   observedAt?: number;
   principal: Principal | null; mandates: Mandate[]; runs: Run[]; audit: AuditEvent[];
   sessions: { id: string; mandateId: string; title?: string }[];
-  demoAvailable: boolean; oidcAvailable: boolean; eveAvailable: boolean; targetUrl: string; identityProviderOrigins?: string[];
+  demoAvailable: boolean; oidcAvailable: boolean; eveAvailable: boolean; targetUrl: string; targets?: { name: string; url: string; origin: string }[]; identityProviderOrigins?: string[];
   runtimeAvailable?: boolean;
 }

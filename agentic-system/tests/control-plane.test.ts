@@ -106,3 +106,27 @@ test("browser receipts belong to the authenticated task and reject another task'
   assert.equal(transaction(s => s.eveSessions.find(s => s.id === "task-a")?.title), "Review the first customer")
   assert.throws(() => bindEveSession("task-a", other.id, m.id), /cannot change/)
 })
+test("a multi-site task reaches only the websites the human chose", () => {
+  process.env.BROWSER_TARGETS = "Broker portal=https://broker.example,NYC Fibre=https://fibre.example,Other=https://other.example"
+  try {
+    const m = mandate({ origins: ["https://broker.example", "https://fibre.example"], requireApproval: false })
+    assert.deepEqual(m.origins, ["https://broker.example", "https://fibre.example"])
+    for (const [url, worker, status] of [["https://broker.example/#/student", "w-ms-1", "executing"], ["https://fibre.example/", "w-ms-2", "executing"], ["https://other.example/", "w-ms-3", "denied"]] as const) {
+      const r = delegateBrowser(human, m.id, { kind: "navigate", url }, worker, "eve")
+      assert.equal(claimExecution(r.id, r.delegation.signature).run.status, status, url)
+    }
+    assert.throws(() => mandate({ origins: ["https://evil.example"] }), /not available/)
+    const single = mandate({ origins: ["https://fibre.example"] })
+    assert.equal(single.origins, undefined)
+    assert.equal(single.origin, "https://fibre.example")
+  } finally { delete process.env.BROWSER_TARGETS }
+})
+test("a grant's site list cannot be widened after signing", () => {
+  process.env.BROWSER_TARGETS = "Broker portal=https://broker.example,NYC Fibre=https://fibre.example"
+  try {
+    const m = mandate({ origins: ["https://broker.example"], requireApproval: false })
+    transaction(s => { const x = s.mandates.find(y => y.id === m.id)!; x.origins = ["https://broker.example", "https://fibre.example"]; x.grant.scope.origins = x.origins })
+    const r = delegateBrowser(human, m.id, { kind: "navigate", url: "https://fibre.example/" }, "w-ms-4", "eve")
+    assert.equal(claimExecution(r.id, r.delegation.signature).run.status, "denied")
+  } finally { delete process.env.BROWSER_TARGETS }
+})

@@ -13,6 +13,7 @@ primary_region = 'iad'
   OIDC_ISSUER = 'https://api.free-id.org'
   OIDC_CLIENT_ID = 'hac-agentic-system-web'
   BROWSER_TARGET_URL = 'https://nyc-fibre.vercel.app'
+  BROWSER_TARGETS = 'Broker portal=https://broker-portal-421.vercel.app,NYC Fibre=https://nyc-fibre.vercel.app'
   IDENTITY_PROVIDER_ORIGINS = 'https://api.free-id.org,https://www.free-id.org'
   HAC_PRUNE_HISTORY = 'true'
 

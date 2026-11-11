@@ -272,6 +272,20 @@
 .message-author { display: flex; gap: var(--space-2); align-items: center; font: 500 12px/16px var(--font-sans); margin-bottom: var(--space-2); }
 .message-author > i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .message-text { white-space: pre-wrap; font: 400 14px/22px var(--font-sans); overflow-wrap: anywhere; }
+.message-text.markdown { white-space: normal; }
+.markdown > * + * { margin-top: var(--space-3); }
+.markdown ul, .markdown ol { padding-left: 20px; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li + li { margin-top: var(--space-1); }
+.markdown strong { font-weight: 600; }
+.markdown a { text-decoration: underline; text-underline-offset: 3px; }
+.markdown code { font: 400 13px/20px var(--font-mono, ui-monospace, monospace); background: var(--gold-tint); border-radius: 4px; padding: 0 4px; }
+.markdown h1, .markdown h2, .markdown h3 { font: 600 15px/22px var(--font-sans); }
+.markdown table { display: block; overflow-x: auto; border-collapse: collapse; font: 400 13px/18px var(--font-sans); }
+.markdown th, .markdown td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; overflow-wrap: normal; min-width: 64px; }
+.markdown th { font-weight: 600; color: var(--ink); }
+.site-options small { display: block; }
 .message.user { background: var(--surface-subtle); padding: var(--space-4) var(--space-5); border-radius: var(--radius-lg); margin-left: var(--space-7); }
 .tool-event { display: block; border: 1px solid var(--border); background: var(--surface-raised); margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); font: 400 12px/16px var(--font-sans); }
 .tool-event summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
