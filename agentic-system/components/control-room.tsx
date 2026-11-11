@@ -23,6 +23,8 @@ const auditLabel = (a: AuditEvent) => ({ "mandate.created": "You granted permiss
 
 export function ControlRoom({ sessionId }: { sessionId?: string }) {
   const [boundSessionId, setBoundSessionId] = useState(sessionId)
+  const [chatGeneration, setChatGeneration] = useState(0)
+  const reconnectChat = useCallback(() => setChatGeneration(n => n + 1), [])
   const [chatOpen, setChatOpen] = useState(true)
   // The dock renders only after the snapshot loads, so reading storage here cannot cause a hydration mismatch.
   const [chatWidth, setChatWidth] = useState(() => typeof window === "undefined" ? 440 : Math.max(360, Number(window.localStorage.getItem("sisyphus.chat-width")) || 440))
@@ -152,7 +154,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
     {loaded && <aside className={chatOpen ? "chat-dock" : "chat-dock minimised"} style={{ width: chatOpen ? `min(${chatWidth}px, calc(100vw - 2rem))` : undefined }} aria-label="Conversation with Sisyphus">
       {chatOpen && <button type="button" className="chat-dock-grip" aria-label="Resize conversation" title="Drag to resize conversation" onPointerDown={startChatResize} onKeyDown={e => { if (e.key === "ArrowLeft") resizeChat(chatWidth + 24); if (e.key === "ArrowRight") resizeChat(chatWidth - 24) }}><RiDraggable size={12} aria-hidden="true"/></button>}
       <header className="chat-dock-head"><span className="brand-ball" aria-hidden="true"/><strong>Sisyphus</strong>{pending.length > 0 && <span className="nav-count">{pending.length}</span>}<Button variant="ghost" size="icon-sm" aria-label={chatOpen ? "Minimise conversation" : "Open conversation"} onClick={() => setChatOpen(open => !open)}>{chatOpen ? <RiSubtractLine/> : <RiExpandUpDownLine/>}</Button></header>
-      <div className="chat-dock-body" hidden={!chatOpen}><AgentChat snapshot={snapshot} mandateId={mandateId} sessionId={sessionId} onSession={setBoundSessionId} onCreatePermissions={createPermissions} continuation={continuation}/></div>
+      <div className="chat-dock-body" hidden={!chatOpen}><AgentChat key={chatGeneration} snapshot={snapshot} mandateId={mandateId} sessionId={chatGeneration > 0 ? boundSessionId : sessionId} onSession={setBoundSessionId} onStalled={reconnectChat} onCreatePermissions={createPermissions} continuation={continuation}/></div>
     </aside>}
     <Dialog open={!!imageId} onOpenChange={open => { if (!open) setImageId(null) }}><DialogContent className="screenshot-dialog"><DialogHeader><DialogTitle>Sisyphus’s browser</DialogTitle><DialogDescription>A captured screenshot from this task, not an interactive browser.</DialogDescription></DialogHeader>{imageId && <Image unoptimized width={1280} height={800} src={`/api/screenshots/${imageId}`} alt="Full browser screenshot"/>}</DialogContent></Dialog>
   </div>

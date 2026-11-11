@@ -19,12 +19,19 @@ type Props = {
   onSession: (id: string) => void;
   onCreatePermissions: (input: TaskPermissions) => Promise<Mandate | null>;
   continuation?: Continuation;
+  onStalled?: () => void;
 }
 // Survives remounts, so reconnecting the chat never resends an approval continuation.
 const consumedContinuations = new Set<string>()
+// A turn can finish on the server while the Vercel → Fly proxy drops the last stream events.
+// With no new events for this long, the parent remounts the chat on the same session and
+// eve's resume replays to the turn boundary. The draft survives the remount.
+const STALL_MS = 20_000
+let draft = ""
 
-export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation }: Props) {
-  const [message, setMessage] = useState("")
+export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreatePermissions, continuation, onStalled }: Props) {
+  const [message, setMessageState] = useState(draft)
+  const setMessage = (text: string) => { draft = text; setMessageState(text) }
   const [confirmTask, setConfirmTask] = useState("")
   // Websites preselected by a starter; null means every configured website.
   const [starterSites, setStarterSites] = useState<string[] | null>(null)
@@ -79,6 +86,11 @@ export function AgentChat({ snapshot, mandateId, sessionId, onSession, onCreateP
     }, 1500)
     return () => window.clearTimeout(timer)
   }, [backgroundPending, agent.status, currentSession, agent])
+  useEffect(() => {
+    if (!working || backgroundPending || !currentSession || !onStalled) return
+    const timer = window.setTimeout(onStalled, STALL_MS)
+    return () => window.clearTimeout(timer)
+  }, [working, backgroundPending, agent.events.length, currentSession, onStalled])
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }) }, [agent.data.messages, agent.status])
   useEffect(() => {
     if (!continuation || consumedContinuations.has(continuation.id) || busy || !currentSession || !connected) return
