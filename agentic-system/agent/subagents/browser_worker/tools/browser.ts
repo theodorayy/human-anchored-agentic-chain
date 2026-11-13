@@ -13,7 +13,7 @@ export default defineTool({
     url: z.string().optional().describe("For navigate: the full URL."),
     x: z.number().int().optional().describe("For click: x coordinate in the 1280 by 800 viewport."),
     y: z.number().int().optional().describe("For click: y coordinate in the 1280 by 800 viewport."),
-    text: z.string().optional().describe("For type: the exact text to enter."),
+    text: z.string().optional().describe("For type: the exact text to enter. May contain placeholders such as {passport.family_name}, typed as given."),
     key: z.enum(["Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"]).optional().describe("For press: the key."),
     deltaY: z.number().int().optional().describe("For scroll: pixels to scroll, negative for up."),
     purpose: z.string().min(1).max(200).describe("Explain the specific UI control and why this action is needed, in plain language for the human approving it."),

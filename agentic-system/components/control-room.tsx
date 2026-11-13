@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useTheme } from "next-themes"
@@ -57,6 +57,11 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
     if (!response.ok) throw new Error("Could not load task activity.")
     const next: Snapshot = await response.json()
     setSnapshot(next); setLoaded(true)
+    const params = new URLSearchParams(window.location.search)
+    if (params.has("identity")) {
+      if (params.get("identity") === "failed") setError("FreeID verification failed. Try again.")
+      window.history.replaceState(null, "", window.location.pathname)
+    }
     setMandateId(previous => next.sessions.find(s => s.id === boundSessionId)?.mandateId || previous)
   }, [boundSessionId])
   useEffect(() => {
@@ -98,6 +103,14 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
       : `I declined action ${run.id} in this workspace. Do not retry it or work around that decision. Explain what remains unfinished.` })
   }
   const mandate = snapshot.mandates.find(m => m.id === mandateId)
+  // When the FreeID release for this task arrives, resume the agent without the human typing.
+  const identityBefore = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const now = mandate?.identity
+    if (identityBefore.current === "pending" && now === "ready")
+      setContinuation({ id: crypto.randomUUID(), message: "My FreeID details are ready. Call request_identity again and continue the task." })
+    identityBefore.current = now
+  }, [mandate?.identity])
   const task = snapshot.sessions.find(s => s.id === boundSessionId)
   // Older saved sessions lack the root ID, so retain their Sisyphus actions within their mandate.
   const runs = boundSessionId ? snapshot.runs.filter(r => r.rootSessionId === boundSessionId || (!r.rootSessionId && r.mode === "eve" && r.mandateId === mandateId)) : []
@@ -130,6 +143,7 @@ export function ControlRoom({ sessionId }: { sessionId?: string }) {
               {boundSessionId && <div className="task-stack">
             {pending.length > 0 && <section id="task-approvals" className="approvals" aria-label="Your approval is required">{pending.map(r => <div key={r.id} className="approval-card approval-bar sy-approve"><span className="sy-approve__icon"><PauseIcon/></span><div className="approval-bar-text"><span className="sy-approve__title">Your turn</span><span className="sy-approve__sub">{beforeI(r)}</span><p>{r.action.kind === "click" ? "The gold marker on the browser below shows where." : r.action.kind === "press" ? `Press ${r.action.key}.` : r.reason} It has not run yet.</p>{r.action.kind === "type" && <pre>{r.action.text}</pre>}</div>
                 <div className="sy-approve__actions"><button className="sy-btn sy-btn--pill sy-btn--gold" disabled={!!busy} onClick={() => void review(r, true)}>Approve & continue</button><button className="sy-btn sy-btn--pill sy-btn--outline" disabled={!!busy} onClick={() => void review(r, false)}>Decline</button></div></div>)}</section>}
+            {mandate?.identity === "pending" && <section className="context-section identity-request"><span className="eyebrow">Identity</span><a className="sy-btn sy-btn--primary" href={`/api/identity/start?mandate=${encodeURIComponent(mandate.id)}`} target="_blank" rel="noreferrer">Verify with FreeID</a></section>}
             <section className="browser-section"><div className="context-section-heading"><span className="eyebrow">Sisyphus’s browser</span><RiComputerLine size={16}/></div><div className="browser-card sy-window"><div className="sy-window__bar"><i/><i/><i/><small>{pageHost}</small></div>{onIdentityProvider && <div className="identity-scan-prompt" role="status"><span className="sy-check"><RiQrCodeLine aria-hidden="true"/></span><span><strong>Scan this code with your FreeID app</strong><small>Waiting for you</small></span></div>}{latest?.screenshotId ? <button className="browser-screenshot" onClick={() => setImageId(latest.screenshotId!)} aria-label="Enlarge browser screenshot"><Image unoptimized width={1280} height={800} src={`/api/screenshots/${latest.screenshotId}`} alt="Latest screenshot from this task’s browser"/>{pending.map(r => r.action.kind === "click" ? <span key={r.id} className="click-marker" style={{ left: `${r.action.x / 1280 * 100}%`, top: `${r.action.y / 800 * 100}%` }}/> : null)}</button> : <div className="browser-empty"><RiComputerLine size={28}/><p>Waiting for Sisyphus to open the website</p></div>}</div>
               <div className="browser-footer"><span>{latest ? `Captured ${time(latest.createdAt)}` : "Screenshots appear as Sisyphus works"}</span>{latest && <button onClick={() => setImageId(latest.screenshotId!)}>Enlarge<RiArrowRightUpLine size={13}/></button>}</div>
             </section>
