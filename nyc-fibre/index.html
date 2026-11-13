@@ -57,8 +57,8 @@
   .step.done .summary-line { color: var(--ink); }
 
   label { display: block; font-weight: 600; margin: 14px 0 6px; }
-  input, select { width: 100%; font: inherit; font-size: 1.05rem; padding: 13px 14px; border: 1.5px solid #b9c3cb; border-radius: var(--radius-s); background: #fff; color: var(--ink); }
-  input:focus-visible, select:focus-visible, button:focus-visible, .choice:focus-visible { outline: 3px solid var(--multimode); outline-offset: 2px; }
+  input, select, textarea { width: 100%; font: inherit; font-size: 1.05rem; padding: 13px 14px; border: 1.5px solid #b9c3cb; border-radius: var(--radius-s); background: #fff; color: var(--ink); }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, .choice:focus-visible { outline: 3px solid var(--multimode); outline-offset: 2px; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
 
@@ -144,6 +144,20 @@
               <strong><span class="freeid-badge">Start with FreeID</span></strong>
               <span>One approval on your phone shares the address on your NYS driver's licence and verifies who you are with your passport chip. Nothing is uploaded.</span>
             </button>
+            <button type="button" class="id-option" id="manual-address"><strong>Enter address</strong></button>
+            <form id="address-form" hidden novalidate>
+              <div class="row">
+                <div><label for="street">Street address</label><input id="street" name="street" autocomplete="address-line1"></div>
+                <div><label for="unit">Apartment</label><input id="unit" name="unit" autocomplete="address-line2"></div>
+              </div>
+              <div class="row">
+                <div><label for="city">City</label><input id="city" name="city" autocomplete="address-level2"></div>
+                <div><label for="state">State</label><input id="state" name="state" autocomplete="address-level1"></div>
+              </div>
+              <label for="zip">ZIP code</label><input id="zip" name="zip" inputmode="numeric" autocomplete="postal-code">
+              <p class="error" id="err-manual-address" role="alert" hidden></p>
+              <div class="actions"><button type="submit" class="primary">Check availability</button></div>
+            </form>
             <p class="error" id="err-address" role="alert" hidden></p>
           </div>
 
@@ -200,7 +214,6 @@
             </div>
             <label for="install">Installation date</label>
             <select id="install" name="install"></select>
-            <p class="hint" style="margin-top:10px">Your name and date of birth come from identity verification in the next step, so you don't type them here.</p>
             <p class="error" id="err-contact" hidden></p>
             <div class="actions"><button type="submit" class="primary" id="confirm-contact">Continue to identity</button></div>
           </form>
@@ -228,8 +241,23 @@
                 <strong>Upload a passport photo and a selfie</strong>
                 <span>Reviewed by our verification partner. Usually 1 to 2 business days.</span>
               </button>
+              <button type="button" class="id-option" id="enter-details"><strong>Enter details</strong></button>
             </div>
+            <form id="details-form" hidden novalidate>
+              <div class="row">
+                <div><label for="given-name">Given name</label><input id="given-name" name="given_name" autocomplete="given-name"></div>
+                <div><label for="family-name">Family name</label><input id="family-name" name="family_name" autocomplete="family-name"></div>
+              </div>
+              <label for="dob">Date of birth</label><input id="dob" name="dob" type="text" placeholder="MM/DD/YYYY" autocomplete="bday">
+              <label for="attestation">Identity attestation</label><textarea id="attestation" name="attestation" rows="3"></textarea>
+              <p class="error" id="err-details" role="alert" hidden></p>
+              <div class="actions"><button type="submit" class="primary">Continue</button></div>
+            </form>
             <p class="error" id="err-identity" hidden></p>
+          </div>
+
+          <div id="details-done" hidden>
+            <div class="actions"><button type="button" class="primary" id="create-account-plain">Create my account</button></div>
           </div>
 
           <div id="id-freeid" hidden>
@@ -422,6 +450,48 @@
     }
     showError('err-contact', '')
     completeContact()
+  })
+
+  // Plain path: a typed address and typed identity details, with an optional attestation.
+  $('manual-address').addEventListener('click', () => {
+    $('address-form').hidden = false
+    $('street').focus()
+  })
+  $('address-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const [street, unit, city, region, zip] = ['street', 'unit', 'city', 'state', 'zip'].map((id) => $(id).value.trim())
+    if (!street || !city || !region || !/^\d{5}$/.test(zip)) {
+      showError('err-manual-address', 'Enter a street address, city, state and 5-digit ZIP code.')
+      return
+    }
+    showError('err-manual-address', '')
+    const address = `${street}${unit ? `, ${unit}` : ''}, ${city}, ${region} ${zip}`
+    state.maskedAddress = address
+    $('o-address').textContent = address
+    $('address-form').hidden = true
+    advance('step-address', `Fibre is available at ${address}.`)
+  })
+  $('enter-details').addEventListener('click', () => {
+    showError('err-identity', '')
+    $('details-form').hidden = false
+    $('given-name').focus()
+  })
+  // Kept only in this page: a real ISP would store it with the account.
+  let attestation = ''
+  $('details-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const given = $('given-name').value.trim()
+    const family = $('family-name').value.trim()
+    if (!given || !family || !/^\d{2}\/\d{2}\/\d{4}$/.test($('dob').value.trim())) {
+      showError('err-details', 'Enter your given name, family name and date of birth as MM/DD/YYYY.')
+      return
+    }
+    showError('err-details', '')
+    attestation = $('attestation').value.trim()
+    $('id-choose').hidden = true
+    $('details-done').hidden = false
+    $('o-identity').textContent = attestation ? 'Details entered with attestation' : 'Details entered'
+    $('o-due').textContent = '$100 deposit (refundable)'
   })
 
   // Identity
@@ -641,18 +711,21 @@
     else goToFreeId(true)
   })
 
-  $('create-account').addEventListener('click', () => {
-    advance('step-identity', shots
-      ? 'Verified with FreeID. Passport chip checked, holder matched.'
-      : verifiedSummary)
+  $('create-account').addEventListener('click', () => createAccount(shots
+    ? 'Verified with FreeID. Passport chip checked, holder matched.'
+    : verifiedSummary))
+  $('create-account-plain').addEventListener('click', () => createAccount($('o-identity').textContent + '.'))
+  function createAccount(summary) {
+    advance('step-identity', summary)
     $('id-result').hidden = true
+    $('details-done').hidden = true
     $('done').hidden = false
     $('order-no').textContent = `NYF-${Math.floor(100000 + Math.random() * 900000)}`
     $('done-email').textContent = $('email').value.trim()
     $('done-detail').textContent = `${state.plan} at ${$('o-address').textContent}. Installation ${install.value}.`
     if (!shots) sessionStorage.removeItem(PROGRESS_KEY)
     $('done').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
-  })
+  }
 
   // Real mode: returning from FreeID, either to step 1 (flow=start) or to the identity step
   const outcome = shots ? null : params.get('freeid')

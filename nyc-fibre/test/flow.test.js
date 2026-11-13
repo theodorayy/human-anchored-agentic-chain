@@ -443,23 +443,20 @@ const stepAddress = () => {
   return /<!-- Step 1: Address -->([\s\S]*?)<!-- Step 2: Plan -->/.exec(html)[1]
 }
 
-test('step 1 has no way to type an address: FreeID is the only way through', () => {
+test('step 1 offers FreeID and a plain typed address', () => {
   const step = stepAddress()
-  assert.ok(!/<(input|select|textarea|form)\b/.test(step), 'step 1 must have no form fields')
-  assert.ok(!step.includes('Check availability'))
   assert.ok(step.includes('id="start-freeid"') && step.includes('Start with FreeID'))
   assert.ok(step.includes('id="retry-address"'))
-  const script = pageScript()
-  for (const id of ['street', 'unit', 'zip', 'form-address', 'check-address']) {
-    assert.ok(!script.includes(`$('${id}')`), `the page script must not use #${id}`)
-  }
-  assert.ok(script.includes("location.assign('/api/login?flow=start')"))
+  assert.ok(step.includes('id="manual-address"') && step.includes('id="address-form"'))
+  assert.ok(pageScript().includes("location.assign('/api/login?flow=start')"))
 })
 
 test('a release without an address cannot complete step 1', () => {
   const script = pageScript()
-  // The address step completes only through completeAddress, and only with a masked address.
-  assert.equal(script.match(/advance\('step-address'/g).length, 1)
+  // Through FreeID, the address step completes only via completeAddress, with a masked address.
+  // Two ways through: a FreeID release (completeAddress) or the plain address form.
+  assert.equal(script.match(/advance\('step-address'/g).length, 2)
+  assert.match(script, /\$\('address-form'\)\.addEventListener\('submit'[\s\S]*?advance\('step-address'/)
   assert.match(script, /function completeAddress\(maskedAddress\) \{[\s\S]*?advance\('step-address'/)
   const callers = [...script.matchAll(/completeAddress\(([^)]*)\)/g)].map((m) => m[1]).filter((arg) => arg !== 'maskedAddress')
   assert.deepEqual([...new Set(callers)].sort(), ['demo.maskedAddress', 'progress.maskedAddress', 'result.address_masked'])
