@@ -8,7 +8,7 @@ import { openCookie, sealCookie } from "./sealed-cookie"
 
 type LoginAttempt = { state: string; nonce: string; verifier: string; expiresAt: number }
 
-async function discovery() {
+export async function discovery() {
   if (!oidcAvailable()) throw new HttpError(503, "Configure OIDC_ISSUER and OIDC_CLIENT_ID to connect an identity provider.")
   const issuer = process.env.OIDC_ISSUER!
   // FreeID may need to wake from Fly's idle state before serving discovery.
@@ -16,7 +16,14 @@ async function discovery() {
   if (!response.ok) throw new HttpError(502, "Identity provider discovery failed.")
   const data = await response.json()
   if (data.issuer !== issuer) throw new HttpError(502, "Identity provider issuer mismatch.")
-  return data as { issuer: string; authorization_endpoint: string; token_endpoint: string; jwks_uri: string }
+  return data as { issuer: string; authorization_endpoint: string; token_endpoint: string; jwks_uri: string; userinfo_endpoint: string }
+}
+// private_key_jwt (RFC 7523): FreeID expects aud = token endpoint.
+export async function clientAssertion(tokenEndpoint: string) {
+  const clientId = process.env.OIDC_CLIENT_ID!
+  const key = await importJWK(JSON.parse(process.env.OIDC_CLIENT_PRIVATE_JWK!), "ES256")
+  return new SignJWT({}).setProtectedHeader({ alg: "ES256", kid: "hac-rp" }).setIssuer(clientId).setSubject(clientId)
+    .setAudience(tokenEndpoint).setIssuedAt().setExpirationTime("2m").setJti(randomBytes(16).toString("hex")).sign(key)
 }
 export async function beginLogin() {
   const config = await discovery()
@@ -49,10 +56,8 @@ export async function finishLogin(request: Request) {
     redirect_uri: `${appUrl()}/api/auth/callback`, code_verifier: attempt.verifier })
   const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded" }
   if (process.env.OIDC_CLIENT_PRIVATE_JWK) {
-    const key = await importJWK(JSON.parse(process.env.OIDC_CLIENT_PRIVATE_JWK), "ES256")
     body.set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-    body.set("client_assertion", await new SignJWT({}).setProtectedHeader({ alg: "ES256", kid: "hac-rp" }).setIssuer(clientId).setSubject(clientId)
-      .setAudience(config.token_endpoint).setIssuedAt().setExpirationTime("2m").setJti(randomBytes(16).toString("hex")).sign(key))
+    body.set("client_assertion", await clientAssertion(config.token_endpoint))
   } else if (process.env.OIDC_CLIENT_SECRET) {
     headers.authorization = `Basic ${Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(process.env.OIDC_CLIENT_SECRET)}`).toString("base64")}`
   }

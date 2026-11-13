@@ -7,7 +7,7 @@ export type Grant = {
 export type Mandate = {
   id: string; principalId: string; title: string; accountableParty: string;
   maxActions: number; usedActions: number; requireApproval: boolean;
-  origin: string; origins?: string[]; createdAt: string; expiresAt: string; revokedAt: string | null; grant: Grant;
+  origin: string; origins?: string[]; identity?: "none" | "pending" | "ready"; createdAt: string; expiresAt: string; revokedAt: string | null; grant: Grant;
 }
 export type BrowserAction =
   | { kind: "navigate"; url: string }
@@ -33,12 +33,17 @@ export type AuditEvent = {
 export type Vault = {
   mandateId: string; principalId: string; values: Record<string, string>; createdAt: string; expiresAt: string;
 }
+export type IdentityRequest = {
+  mandateId: string; principalId: string; requestedAt: string;
+  attempt?: { state: string; nonce: string; verifier: string; expiresAt: number };
+}
 export type State = {
   version: 1; signingKey: string; mandates: Mandate[]; runs: Run[]; audit: AuditEvent[];
   sessions: { hash: string; expiresAt: number; principal: Principal }[];
   oauth: { state: string; nonce: string; verifier: string; expiresAt: number }[];
   eveSessions: { id: string; principalId: string; mandateId: string; title?: string }[];
   vaults?: Vault[];
+  identityRequests?: IdentityRequest[];
 }
 export type Snapshot = {
   observedAt?: number;

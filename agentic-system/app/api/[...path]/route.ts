@@ -2,6 +2,7 @@ import { z, ZodError } from "zod"
 import { readFile } from "node:fs/promises"
 import { requirePrincipal, requireSameOrigin, demoSession, logout, demoAvailable, oidcAvailable, eveAvailable, appUrl, cookieHeader } from "@/lib/hac/auth"
 import { beginLogin, finishLogin } from "@/lib/hac/oidc"
+import { beginRelease, finishRelease, identityStatus } from "@/lib/hac/identity"
 import { createMandate, revokeMandate, deleteTask, delegateBrowser, dispatchBrowser, reviewRun, HttpError } from "@/lib/hac/control-plane"
 import { targetUrl, targets, identityProviderOrigins } from "@/lib/hac/policy"
 import { transaction } from "@/lib/hac/store"
@@ -29,7 +30,7 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
         if (serverlessHost()) return publicJson({ principal, mandates: [], runs: [], audit: [], sessions: [],
           demoAvailable: false, oidcAvailable: oidcAvailable(), eveAvailable: false, runtimeAvailable: false, targetUrl: targetUrl(), targets: targets(), identityProviderOrigins: identityProviderOrigins() })
         const data = transaction(state => ({
-          mandates: state.mandates.filter(m => m.principalId === principal?.id),
+          mandates: state.mandates.filter(m => m.principalId === principal?.id).map(m => ({ ...m, identity: identityStatus(state, m.id) })),
           runs: state.runs.filter(r => r.principalId === principal?.id).slice(-100).reverse(),
           audit: auditForPrincipal(state, principal.id).slice(-200).reverse(),
           sessions: state.eveSessions.filter(s => s.principalId === principal?.id).map(s => ({ id: s.id, mandateId: s.mandateId, title: s.title })),
@@ -44,6 +45,11 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     const { executeBrowser, artifactPath, closeMandateBrowsers } = await import("@/lib/hac/browser")
     if (request.method === "GET") {
       const principal = requirePrincipal(request)
+      if (path === "identity/start") {
+        const mandateId = z.string().uuid().parse(new URL(request.url).searchParams.get("mandate"))
+        return await beginRelease(principal, mandateId)
+      }
+      if (path === "freeid/callback") return await finishRelease(request, principal)
       if (path === "audit/export") {
         const events = transaction(state => auditForPrincipal(state, principal.id))
         return new Response(JSON.stringify(events, null, 2), { headers: { "content-type": "application/json", "content-disposition": 'attachment; filename="hac-audit.json"', "cache-control": "no-store" } })
