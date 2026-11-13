@@ -6,7 +6,7 @@ import { claimExecution, checkCurrentAuthority, completeExecution, HttpError } f
 import { identityProviderOrigins, scopeOrigins } from "./policy"
 import type { Run } from "./types"
 import { transaction } from "./store"
-import { hasPlaceholder, openVault, redact, resolvePlaceholders } from "./vault"
+import { hasPlaceholder, openVault, redact, resolvePlaceholders, valuePatterns } from "./vault"
 
 type Worker = { browser: Browser; context: BrowserContext; page: Page; mandateId: string; principalId: string; timer: NodeJS.Timeout; busy: boolean; currentRun: Run }
 const shared = globalThis as typeof globalThis & { hacBrowsers?: Map<string, Worker>; hacBrowserLocks?: Set<string> }
@@ -64,40 +64,86 @@ async function getWorker(run: Run) {
     return worker
   } catch (error) { await browser.close(); throw error }
 }
-const escapeForRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-// Hides vault values before a screenshot: typed fields render as dots, and any text node
-// that shows a value is covered. Returns a function that puts the page back as it was.
-export async function maskForScreenshot(page: Page, values: Record<string, string>): Promise<() => Promise<void>> {
-  const patterns = Object.values(values).map(v => v.trim()).filter(v => v.length >= 3)
-    .sort((a, b) => b.length - a.length).map(v => escapeForRegex(v).replace(/\s+/g, "\\s+"))
-  await page.evaluate((sources: string[]) => {
+// Masking runs in an isolated script world: the page shares the DOM but none of this
+// world's JavaScript, so a site's own scripts can never see the values being matched.
+async function inIsolatedWorld<T>(page: Page, script: string, arg: unknown): Promise<T> {
+  const cdp = await page.context().newCDPSession(page)
+  try {
+    const { frameTree } = await cdp.send("Page.getFrameTree")
+    const { executionContextId } = await cdp.send("Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: "hac-mask" })
+    const { result, exceptionDetails } = await cdp.send("Runtime.evaluate", {
+      expression: `(${script})(${JSON.stringify(arg)})`, contextId: executionContextId, returnByValue: true, awaitPromise: true })
+    if (exceptionDetails) throw new Error("Could not hide FreeID details on this page.")
+    return result.value as T
+  } finally { await cdp.detach().catch(() => undefined) }
+}
+// Plain JavaScript strings, not functions, so no compiler helper ends up in the page.
+const ROOTS = `function roots() {
+  const list = [document]
+  const walk = root => { for (const el of root.querySelectorAll("*")) if (el.shadowRoot) { list.push(el.shadowRoot); walk(el.shadowRoot) } }
+  walk(document)
+  return list
+}`
+const MASK = `(({ sources }) => {
+  ${ROOTS}
+  const css = "[data-hac-filled],[data-hac-mask]{-webkit-text-security:disc!important}[data-hac-cover]{background:#888!important;color:#888!important;fill:#888!important}iframe[data-hac-cover]{visibility:hidden!important}"
+  for (const root of roots()) {
     const style = document.createElement("style")
-    style.id = "hac-mask"
-    style.textContent = "[data-hac-filled],[data-hac-mask]{-webkit-text-security:disc!important}[data-hac-cover]{background:#888!important;color:#888!important}"
-    document.head.appendChild(style)
-    if (!sources.length) return
-    const pattern = new RegExp(sources.join("|"), "i")
-    for (const field of Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")))
-      if (pattern.test(field.value)) field.setAttribute("data-hac-mask", "1")
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-    const hits: Text[] = []
+    style.setAttribute("data-hac-style", "1")
+    style.textContent = css
+    ;(root === document ? (document.head || document.documentElement) : root).appendChild(style)
+  }
+  if (!sources.length) return
+  const pattern = new RegExp(sources.join("|"), "iu")
+  for (const root of roots()) {
+    for (const field of root.querySelectorAll("input, textarea"))
+      if (pattern.test(field.value) || pattern.test(field.placeholder || "")) field.setAttribute("data-hac-mask", "1")
+    for (const frame of root.querySelectorAll("iframe")) frame.setAttribute("data-hac-cover", "1")
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const hits = []
     for (let node = walker.nextNode(); node; node = walker.nextNode())
-      if (pattern.test(node.textContent || "") && !node.parentElement?.closest("script,style")) hits.push(node as Text)
+      if (pattern.test(node.textContent || "") && !(node.parentElement && node.parentElement.closest("script,style,[data-hac-cover]"))) hits.push(node)
     for (const node of hits) {
       const cover = document.createElement("span")
       cover.setAttribute("data-hac-cover", "1")
-      cover.setAttribute("data-hac-filled", "1")
       node.replaceWith(cover)
       cover.appendChild(node)
     }
-  }, patterns)
-  return async () => {
-    await page.evaluate(() => {
-      document.getElementById("hac-mask")?.remove()
-      for (const field of Array.from(document.querySelectorAll("[data-hac-mask]"))) field.removeAttribute("data-hac-mask")
-      for (const cover of Array.from(document.querySelectorAll("[data-hac-cover]"))) cover.replaceWith(...Array.from(cover.childNodes))
-    }).catch(() => undefined)
   }
+})`
+const EXPOSED = `(({ sources }) => {
+  ${ROOTS}
+  if (!sources.length) return false
+  const pattern = new RegExp(sources.join("|"), "iu")
+  for (const root of roots()) {
+    for (const field of root.querySelectorAll("input, textarea"))
+      if ((pattern.test(field.value) || pattern.test(field.placeholder || "")) && !field.matches("[data-hac-mask],[data-hac-filled]")) return true
+    for (const frame of root.querySelectorAll("iframe")) if (!frame.matches("[data-hac-cover]")) return true
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode())
+      if (pattern.test(node.textContent || "") && !(node.parentElement && node.parentElement.closest("script,style,[data-hac-cover]"))) return true
+  }
+  return false
+})`
+const UNMASK = `(() => {
+  ${ROOTS}
+  for (const root of roots()) {
+    for (const el of root.querySelectorAll("[data-hac-style]")) el.remove()
+    for (const el of root.querySelectorAll("[data-hac-mask]")) el.removeAttribute("data-hac-mask")
+    for (const el of root.querySelectorAll("iframe[data-hac-cover]")) el.removeAttribute("data-hac-cover")
+    for (const el of root.querySelectorAll("[data-hac-cover]")) el.replaceWith(...el.childNodes)
+  }
+})`
+// Hides vault values before a screenshot: typed fields render as dots, and text, fields and
+// frames that show a value are covered. Returns a function that puts the page back.
+export async function maskForScreenshot(page: Page, values: Record<string, string>): Promise<() => Promise<void>> {
+  const sources = valuePatterns(values).map(p => p.source)
+  await inIsolatedWorld(page, MASK, { sources })
+  return async () => { await inIsolatedWorld(page, UNMASK, {}).catch(() => undefined) }
+}
+// True if the page still shows a value outside the masking (for example, a script undid it).
+export async function stillExposed(page: Page, values: Record<string, string>): Promise<boolean> {
+  return inIsolatedWorld<boolean>(page, EXPOSED, { sources: valuePatterns(values).map(p => p.source) })
 }
 // A form submitted with GET, or a redirect, can carry values in the address.
 function redactUrl(href: string, values: Record<string, string>) {
@@ -111,10 +157,11 @@ export async function executeBrowser(runId: string, capability: string) {
   const run = claim.run
   let worker: Worker | undefined
   // FreeID-released values for this task; only placeholders leave this function.
-  const values = transaction(state => openVault(state, run.mandateId)) || {}
+  let values: Record<string, string> = {}
   if (locks.has(run.workerId)) return completeExecution(run.id, {}, "This browser is handling another action. Wait before continuing.")
   locks.add(run.workerId)
   try {
+    values = transaction(state => openVault(state, run.mandateId)) || {}
     checkCurrentAuthority(run)
     if (run.action.kind === "close") {
       await closeWorker(run.workerId)
@@ -168,7 +215,13 @@ export async function executeBrowser(runId: string, capability: string) {
     checkCurrentAuthority(run)
     const screenshotId = randomUUID()
     const unmask = await maskForScreenshot(page, values)
-    const screenshot = await page.screenshot({ type: "png" }).finally(unmask)
+    let exposed = true, screenshot: Buffer
+    try {
+      screenshot = await page.screenshot({ type: "png" })
+      // Fail closed: a page that re-renders a value after masking gets no screenshot.
+      exposed = await stillExposed(page, values)
+    } finally { await unmask() }
+    if (exposed) throw new Error("This page shows FreeID details that could not be hidden, so no screenshot was kept.")
     await mkdir(resolve(/* turbopackIgnore: true */ process.env.HAC_DATA_DIR || ".hac", "screenshots"), { recursive: true, mode: 0o700 })
     await writeFile(artifactPath(screenshotId), screenshot, { mode: 0o600 })
     const finalOrigin = new URL(page.url()).origin

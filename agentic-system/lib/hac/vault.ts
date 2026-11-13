@@ -76,7 +76,7 @@ export function openVault(state: State, mandateId: string, now = Date.now()): Re
   return vault ? Object.fromEntries(Object.entries(vault.values).map(([k, v]) => [k, open(v)])) : null
 }
 
-const TOKEN = /\{([a-z]+(?:\.[a-z_]+)+)\}/g
+const TOKEN = /\{((?:passport|licence)(?:\.[a-z_]+)+|attestation)\}/g
 export function resolvePlaceholders(text: string, values: Record<string, string>): string {
   return text.replace(TOKEN, (_, name: string) => {
     if (!Object.hasOwn(values, name)) throw new Error(`Unknown placeholder {${name}}`)
@@ -86,15 +86,21 @@ export function resolvePlaceholders(text: string, values: Record<string, string>
 export const hasPlaceholder = (text: string) => new RegExp(TOKEN.source).test(text)
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-// One pass over the text, longest values first, so a replacement never lands inside
-// another replacement's placeholder.
+// Regex sources for each value, longest first, matched as whole words (so "USA" does not hit
+// "usage") with any run of whitespace in the value matching any whitespace. Two-letter
+// values count: family names such as Ng or Li are common.
+export function valuePatterns(values: Record<string, string>): { key: string; source: string }[] {
+  return Object.entries(values).map(([key, v]) => ({ key, value: v.trim() })).filter(e => e.value.length >= 2)
+    .sort((a, b) => b.value.length - a.value.length)
+    .map(({ key, value }) => ({ key, source: `(?<![\\p{L}\\p{N}])${escape(value).replace(/\s+/g, "\\s+")}(?![\\p{L}\\p{N}])` }))
+}
+// One pass over the text, so a replacement never lands inside another replacement's placeholder.
 export function redact(text: string, values: Record<string, string>): string {
-  const entries = Object.entries(values).filter(([, v]) => v.trim().length >= 3).sort((a, b) => b[1].length - a[1].length)
+  const entries = valuePatterns(values)
   if (!entries.length || !text) return text
-  const patterns = entries.map(([, v]) => escape(v.trim()).replace(/\s+/g, "\\s+"))
-  const pattern = new RegExp(patterns.map(p => `(${p})`).join("|"), "giu")
+  const pattern = new RegExp(entries.map(e => `(${e.source})`).join("|"), "giu")
   return text.replace(pattern, (...match) => {
     const index = match.slice(1, entries.length + 1).findIndex(group => group !== undefined)
-    return `{${entries[index][0]}}`
+    return `{${entries[index].key}}`
   })
 }

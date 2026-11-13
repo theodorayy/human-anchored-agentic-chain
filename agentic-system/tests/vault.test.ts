@@ -75,3 +75,12 @@ test("vault is deleted with the task and on revocation", () => {
   transaction(s => { storeVault(s, s.mandates.find(x => x.id === dropped.id)!, values); dropVault(s, dropped.id) })
   assert.equal(transaction(s => openVault(s, dropped.id)), null)
 })
+test("short values are redacted as whole words only", () => {
+  const short = { "passport.family_name": "Ng", "passport.nationality": "USA" }
+  const out = redact("Mr NG lives in the USA; usage of Ngong is fine", short)
+  assert.equal(out, "Mr {passport.family_name} lives in the {passport.nationality}; usage of Ngong is fine")
+})
+test("the attestation placeholder resolves", () => {
+  assert.equal(resolvePlaceholders("{attestation}", values), "eyJ.x~d~kb")
+  assert.equal(resolvePlaceholders("{other}", values), "{other}")
+})

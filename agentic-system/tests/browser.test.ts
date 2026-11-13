@@ -121,7 +121,7 @@ const vaultValues = placeholdersFromRelease({ fields: { given_name: "ANNE-MARIE"
 const formPage = `<html><head><title>Signup</title></head><body>
 <input id="name" style="position:absolute;left:10px;top:10px;width:300px;height:40px">
 <p id="summary" style="position:absolute;left:10px;top:100px"></p>
-<script>document.getElementById("name").addEventListener("input", e => { document.getElementById("summary").textContent = "Thanks, " + e.target.value; document.title = "Order for " + e.target.value })</script>
+<script>document.getElementById("name").addEventListener("input", e => { document.getElementById("summary").textContent = "Thanks, " + e.target.value + " / " + [...e.target.value].reverse().join(""); document.title = "Order for " + e.target.value })</script>
 </body></html>`
 
 async function formMandate(port: number) {
@@ -174,7 +174,7 @@ test("maskForScreenshot hides filled fields and any text showing a value", async
       const found: string[] = []
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
       for (let node = walker.nextNode(); node; node = walker.nextNode())
-        if (/smith|1990-02-03/i.test(node.textContent || "") && !node.parentElement?.closest("[data-hac-filled]")) found.push(node.textContent || "")
+        if (/smith|1990-02-03/i.test(node.textContent || "") && !node.parentElement?.closest("[data-hac-cover]")) found.push(node.textContent || "")
       return found
     })
     assert.deepEqual(leaks, [])
@@ -191,5 +191,63 @@ test("values in the page address are redacted", async () => {
     const done = await executeBrowser(go.id, go.delegation.signature)
     assert.equal(done.status, "completed", done.reason)
     assert.equal(/smith/i.test(done.pageUrl || ""), false)
+  } finally { await closeMandateBrowsers(m.id); site.close() }
+})
+test("masking never hands vault values to the page's own scripts", async () => {
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.setContent(`<p>Hello Anne-Marie Smith</p><script>
+      window.captured = []
+      const R = window.RegExp
+      window.RegExp = function (...a) { window.captured.push(String(a[0])); return new R(...a) }
+      const walker = Document.prototype.createTreeWalker
+      Document.prototype.createTreeWalker = function (...a) { window.captured.push("walker"); return walker.apply(this, a) }
+    </script>`)
+    const unmask = await maskForScreenshot(page, vaultValues)
+    assert.deepEqual(await page.evaluate(() => (window as unknown as { captured: string[] }).captured), [])
+    assert.equal(await page.locator("[data-hac-cover]").count(), 1)
+    await unmask()
+    assert.equal(await page.locator("[data-hac-cover]").count(), 0)
+  } finally { await browser.close() }
+})
+test("a page that undoes the masking fails closed instead of exposing values", async () => {
+  const sneaky = `<html><head><title>Sneaky</title></head><body><p id="out">Order for Anne-Marie Smith</p>
+<script>new MutationObserver(() => { for (const c of document.querySelectorAll("[data-hac-cover]")) c.replaceWith(...c.childNodes) }).observe(document.body, { subtree: true, childList: true })</script></body></html>`
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(sneaky) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  process.env.BROWSER_TARGET_URL = `http://127.0.0.1:${(site.address() as { port: number }).port}`
+  const m = createMandate(human, { title: "Sneaky page", maxActions: 5, durationHours: 1, requireApproval: false })
+  tx(s => storeVault(s, s.mandates.find(x => x.id === m.id)!, vaultValues))
+  try {
+    const open = delegateBrowser(human, m.id, { kind: "navigate", url: process.env.BROWSER_TARGET_URL }, "sneaky-worker", "eve")
+    const run = await executeBrowser(open.id, open.delegation.signature)
+    assert.equal(run.status, "failed")
+    assert.equal(run.screenshotId, undefined)
+    assert.equal(/smith/i.test(JSON.stringify(run)), false)
+  } finally { await closeMandateBrowsers(m.id); site.close() }
+})
+test("a vault that cannot be opened fails the action instead of leaving it claimed", async () => {
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(formPage) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  const m = await formMandate((site.address() as { port: number }).port)
+  const key = process.env.HAC_VAULT_KEY
+  try {
+    process.env.HAC_VAULT_KEY = "55".repeat(32)
+    const type = delegateBrowser(human, m.id, { kind: "type", text: "{passport.full_name}" }, "vault-worker", "eve")
+    const run = await executeBrowser(type.id, type.delegation.signature)
+    assert.equal(run.status, "failed")
+  } finally { process.env.HAC_VAULT_KEY = key; await closeMandateBrowsers(m.id); site.close() }
+})
+test("typing {attestation} enters the credential", async () => {
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(formPage) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  const m = await formMandate((site.address() as { port: number }).port)
+  try {
+    const type = delegateBrowser(human, m.id, { kind: "type", text: "{attestation}" }, "vault-worker", "eve")
+    const run = await executeBrowser(type.id, type.delegation.signature)
+    assert.equal(run.status, "completed", run.reason)
+    // The reversed echo is not redacted, so it shows what was really typed.
+    assert.ok(run.observation!.includes("bk~tsetta.Jye"), run.observation)
   } finally { await closeMandateBrowsers(m.id); site.close() }
 })
