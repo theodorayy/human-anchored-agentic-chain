@@ -30,11 +30,15 @@ export type AuditEvent = {
   id: string; at: string; principalId: string; runId?: string; mandateId?: string;
   actor: string; event: string; detail: string; actionDetail?: string; typedText?: string;
 }
+export type Vault = {
+  mandateId: string; principalId: string; values: Record<string, string>; createdAt: string; expiresAt: string;
+}
 export type State = {
   version: 1; signingKey: string; mandates: Mandate[]; runs: Run[]; audit: AuditEvent[];
   sessions: { hash: string; expiresAt: number; principal: Principal }[];
   oauth: { state: string; nonce: string; verifier: string; expiresAt: number }[];
   eveSessions: { id: string; principalId: string; mandateId: string; title?: string }[];
+  vaults?: Vault[];
 }
 export type Snapshot = {
   observedAt?: number;

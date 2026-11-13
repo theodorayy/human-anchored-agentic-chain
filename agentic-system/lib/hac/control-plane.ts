@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { transaction } from "./store"
 import { audit, evaluate, mandateInput, browserAction, signGrant, targets, actionLabel } from "./policy"
 import type { Principal, Run } from "./types"
+import { dropVault } from "./vault"
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message) }
@@ -37,6 +38,7 @@ export function revokeMandate(principal: Principal, id: string) {
     const m = owned(state.mandates, id, principal)
     if (!m.revokedAt) {
       m.revokedAt = new Date().toISOString()
+      dropVault(state, id)
       audit(state, { principalId: principal.id, mandateId: id, actor: "Principal", event: "mandate.revoked", detail: "Descendant authority revoked. Future browser actions will be denied." })
       for (const run of state.runs.filter(r => r.mandateId === id && ["approval", "queued"].includes(r.status))) {
         run.status = "denied"; run.reason = "The human mandate has been revoked."
@@ -51,6 +53,7 @@ export function deleteTask(principal: Principal, sessionId: string) {
     const index = state.eveSessions.findIndex(s => s.id === sessionId && s.principalId === principal.id)
     if (index < 0) throw new HttpError(404, "Task not found.")
     const [session] = state.eveSessions.splice(index, 1)
+    dropVault(state, session.mandateId)
     const m = state.mandates.find(x => x.id === session.mandateId && x.principalId === principal.id)
     if (m && !m.revokedAt) {
       m.revokedAt = new Date().toISOString()
