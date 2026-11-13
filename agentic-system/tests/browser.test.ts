@@ -109,3 +109,87 @@ test("identity providers cannot be reached from target frames or scripts", async
     provider.close(); target.close()
   }
 })
+
+// ---- Vault placeholders: typed for real, never shown back ----
+import { chromium } from "playwright"
+import { transaction as tx } from "../lib/hac/store"
+import { placeholdersFromRelease, storeVault } from "../lib/hac/vault"
+import { maskForScreenshot } from "../lib/hac/browser"
+
+process.env.HAC_VAULT_KEY ||= "33".repeat(32)
+const vaultValues = placeholdersFromRelease({ fields: { given_name: "ANNE-MARIE", family_name: "SMITH", birthdate: "1990-02-03" }, address: null }, "eyJ.attest~kb")
+const formPage = `<html><head><title>Signup</title></head><body>
+<input id="name" style="position:absolute;left:10px;top:10px;width:300px;height:40px">
+<p id="summary" style="position:absolute;left:10px;top:100px"></p>
+<script>document.getElementById("name").addEventListener("input", e => { document.getElementById("summary").textContent = "Thanks, " + e.target.value; document.title = "Order for " + e.target.value })</script>
+</body></html>`
+
+async function formMandate(port: number) {
+  process.env.BROWSER_TARGET_URL = `http://127.0.0.1:${port}`
+  const m = createMandate(human, { title: "Vault typing", maxActions: 20, durationHours: 1, requireApproval: false })
+  tx(s => storeVault(s, s.mandates.find(x => x.id === m.id)!, vaultValues))
+  const open = delegateBrowser(human, m.id, { kind: "navigate", url: process.env.BROWSER_TARGET_URL }, "vault-worker", "eve")
+  assert.equal((await executeBrowser(open.id, open.delegation.signature)).status, "completed")
+  const click = delegateBrowser(human, m.id, { kind: "click", x: 50, y: 30 }, "vault-worker", "eve")
+  assert.equal((await executeBrowser(click.id, click.delegation.signature)).status, "completed")
+  return m
+}
+test("typing a placeholder enters the real value and echoed values are redacted", async () => {
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(formPage) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  const m = await formMandate((site.address() as { port: number }).port)
+  try {
+    const type = delegateBrowser(human, m.id, { kind: "type", text: "{passport.full_name}" }, "vault-worker", "eve")
+    const typed = await executeBrowser(type.id, type.delegation.signature)
+    assert.equal(typed.status, "completed", typed.reason)
+    // Redaction only matches the real value, so the placeholder here proves it was typed.
+    assert.match(typed.observation!, /Thanks, \{passport\.full_name\}/)
+    assert.equal(/smith|anne/i.test(typed.observation! + typed.pageTitle), false)
+    const events = tx(s => s.audit.filter(e => e.runId === type.id))
+    assert.ok(events.some(e => e.typedText === "{passport.full_name}"))
+    assert.equal(/smith|anne/i.test(JSON.stringify(events)), false)
+  } finally { await closeMandateBrowsers(m.id); site.close() }
+})
+test("unknown placeholders and missing vaults fail without values", async () => {
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(formPage) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  const m = await formMandate((site.address() as { port: number }).port)
+  try {
+    const unknown = delegateBrowser(human, m.id, { kind: "type", text: "{passport.middle_name}" }, "vault-worker", "eve")
+    const failed = await executeBrowser(unknown.id, unknown.delegation.signature)
+    assert.equal(failed.status, "failed")
+    assert.match(failed.reason, /\{passport\.middle_name\}/)
+    tx(s => { s.vaults = (s.vaults || []).filter(v => v.mandateId !== m.id) })
+    const missing = delegateBrowser(human, m.id, { kind: "type", text: "{passport.full_name}" }, "vault-worker", "eve")
+    assert.equal((await executeBrowser(missing.id, missing.delegation.signature)).status, "failed")
+  } finally { await closeMandateBrowsers(m.id); site.close() }
+})
+test("maskForScreenshot hides filled fields and any text showing a value", async () => {
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.setContent(`<input id="name" data-hac-filled="1" value="Anne-Marie Smith"><p>Order for <b>Anne-Marie Smith</b>, born 1990-02-03</p><p>Other text</p>`)
+    await maskForScreenshot(page, vaultValues)
+    const leaks = await page.evaluate(() => {
+      const found: string[] = []
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode())
+        if (/smith|1990-02-03/i.test(node.textContent || "") && !node.parentElement?.closest("[data-hac-filled]")) found.push(node.textContent || "")
+      return found
+    })
+    assert.deepEqual(leaks, [])
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("name")!).getPropertyValue("-webkit-text-security")), "disc")
+    assert.ok(await page.locator("text=Other text").isVisible())
+  } finally { await browser.close() }
+})
+test("values in the page address are redacted", async () => {
+  const site = createServer((_req, res) => { res.setHeader("content-type", "text/html"); res.end(formPage) })
+  await new Promise<void>(resolve => site.listen(0, "127.0.0.1", resolve))
+  const m = await formMandate((site.address() as { port: number }).port)
+  try {
+    const go = delegateBrowser(human, m.id, { kind: "navigate", url: `${process.env.BROWSER_TARGET_URL}/done?name=Anne-Marie%20Smith` }, "vault-worker", "eve")
+    const done = await executeBrowser(go.id, go.delegation.signature)
+    assert.equal(done.status, "completed", done.reason)
+    assert.equal(/smith/i.test(done.pageUrl || ""), false)
+  } finally { await closeMandateBrowsers(m.id); site.close() }
+})
